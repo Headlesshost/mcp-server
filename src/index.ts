@@ -678,11 +678,12 @@ server.registerTool(
     description: "Create a new content site in the current account",
     inputSchema: {
       name: z.string().describe("Content site name"),
+      sampleDataId: z.string().optional().describe("Optional sample data ID to initialize the site. The sample data list can be found in the ref data."),
     },
   },
-  async ({ name }) => {
+  async ({ name, sampleDataId }) => {
     try {
-      const payload = { name };
+      const payload = { name, sampleDataId };
       const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/content-sites", payload);
 
       return {
