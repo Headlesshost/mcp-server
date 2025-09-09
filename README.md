@@ -114,6 +114,12 @@ HEADLESSHOST_API_KEY=your-auth-token
 
 Add this configuration to your Claude Desktop config file:
 
+On a Mac (edit or create this file).
+
+```bash
+/Users/warren/Library/Application Support/Claude/claude_desktop_config.json
+```
+
 ```json
 {
   "mcpServers": {
