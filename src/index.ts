@@ -16,7 +16,7 @@ import { z } from "zod";
 import axios, { AxiosResponse } from "axios";
 
 // Configuration
-const API_BASE_URL = process.env.HEADLESSHOST_BASE_URL || "https://api.headlesshost.com";
+const API_BASE_URL = "https://api.headlesshost.com";
 const API_KEY = process.env.HEADLESSHOST_API_KEY || "YOUR API KEY HERE";
 // Create axios instance with default config
 const apiClient = axios.create({
