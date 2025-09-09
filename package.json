@@ -1,0 +1,45 @@
+{
+  "name": "headlesshost-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Headlesshost API tools endpoints",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "headlesshost-mcp-server": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "dev": "tsx src/index.ts",
+    "start": "node build/index.js",
+    "prepare": "npm run build",
+    "watch": "tsc --watch",
+    "inspector": "npx @modelcontextprotocol/inspector build/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tools",
+    "api"
+  ],
+  "author": "Warren",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/dotenv": "^6.1.1",
+    "axios": "^1.6.0",
+    "dotenv": "^17.2.1",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "build/**/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
