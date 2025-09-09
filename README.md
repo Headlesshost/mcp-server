@@ -1,12 +1,16 @@
-# Kapiti MCP Server
+# Headlesshost MCP Server
 
-A comprehensive Model Context Protocol (MCP) server that provides complete communication with the Kapiti platform API endpoints. This server enables AI assistants to interact with all aspects of the Kapiti platform including user management, content site operations, staging site management, content generation, analytics, and system administration.
+A comprehensive Model Context Protocol (MCP) server that provides complete communication with the Headlesshost platform API endpoints. This server enables AI assistants to interact with all aspects of the Headlesshost platform including user management, content site operations, staging site management, content generation, analytics, and system administration.
+
+## Demo
+
+https://www.youtube.com/watch?v=xGGwcrI7gSo&feature=youtu.be
 
 ## Features
 
 ### 🔧 General System Tools (4 tools)
 
-- **Ping**: Test authentication and connection to the Kapiti API
+- **Ping**: Test authentication and connection to the Headlesshost API
 - **Health**: Check API health status and connectivity
 - **GPT Assistant**: Access AI assistance for various tasks
 - **Reference Data**: Access system reference data and lookups
@@ -124,7 +128,7 @@ Comprehensive staging site functionality including:
 
 ## 📈 Total Coverage
 
-**87 Tools** providing complete API coverage across all Kapiti platform functionality!
+**87 Tools** providing complete API coverage across all Headlesshost platform functionality!
 
 ## Installation
 
@@ -145,14 +149,14 @@ Comprehensive staging site functionality including:
 Set up your environment variables:
 
 ```bash
-export HEADLESSHOST_BASE_URL="https://api.kapiti.com"
+export HEADLESSHOST_BASE_URL="https://api.Headlesshost.com"
 export HEADLESSHOST_API_KEY="your-auth-token"
 ```
 
 Or create a `.env` file:
 
 ```env
-HEADLESSHOST_BASE_URL=https://api.kapiti.com
+HEADLESSHOST_BASE_URL=https://api.Headlesshost.com
 HEADLESSHOST_API_KEY=your-auth-token
 ```
 
@@ -165,11 +169,11 @@ Add this configuration to your Claude Desktop config file:
 ```json
 {
   "mcpServers": {
-    "kapiti-cms": {
+    "Headlesshost-cms": {
       "command": "node",
-      "args": ["/path/to/kapiti.mcp/build/index.js"],
+      "args": ["/path/to/Headlesshost.mcp/build/index.js"],
       "env": {
-        "HEADLESSHOST_BASE_URL": "https://api.kapiti.com",
+        "HEADLESSHOST_BASE_URL": "https://api.Headlesshost.com",
         "HEADLESSHOST_API_KEY": "your-auth-token"
       }
     }
@@ -189,7 +193,7 @@ This server is compatible with any MCP client including:
 Configure your client to use:
 
 - **Command**: `node`
-- **Args**: `["/path/to/kapiti.mcp/build/index.js"]`
+- **Args**: `["/path/to/Headlesshost.mcp/build/index.js"]`
 - **Environment**: Set `HEADLESSHOST_BASE_URL` and `HEADLESSHOST_API_KEY`
 
 ### Development
@@ -222,7 +226,7 @@ npm run inspector
 
 The server provides 2 resources for configuration and monitoring:
 
-- **API Configuration**: Current Kapiti API settings and endpoints
+- **API Configuration**: Current Headlesshost API settings and endpoints
 - **API Health Status**: Real-time connectivity and health information
 
 ## Error Handling
