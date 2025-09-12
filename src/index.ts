@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import axios, { AxiosResponse } from "axios";
+import FormData from "form-data";
 
 // Configuration
 const API_BASE_URL = "https://api.headlesshost.com";
@@ -631,15 +632,86 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
-      file: z.string().describe("Base64 encoded file data or file path"),
+      file: z.string().describe("Base64 encoded file data"),
       filename: z.string().optional().describe("Original filename"),
       mimetype: z.string().optional().describe("File MIME type"),
     },
   },
   async ({ contentSiteId, stagingSiteId, file, filename, mimetype }) => {
     try {
-      const payload = { file, filename, mimetype };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/contentSite/${contentSiteId}/staging-sites/${stagingSiteId}/files`, payload);
+      // Convert base64 to buffer
+      const buffer = Buffer.from(file, "base64");
+
+      // Create FormData for multipart upload
+      const formData = new FormData();
+
+      // Add the file as a buffer with filename
+      formData.append("file", buffer, {
+        filename: filename || "uploaded-file.txt",
+        contentType: mimetype || "application/octet-stream",
+      });
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/files`, formData, {
+        headers: {
+          ...formData.getHeaders(), // This sets Content-Type: multipart/form-data
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: handleApiError(error),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Upload Staging Site Image
+server.registerTool(
+  "upload_staging_site_image",
+  {
+    title: "Upload Staging Site Image",
+    description: "Upload an image to a staging site",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      file: z.string().describe("Base64 encoded file data"),
+      filename: z.string().optional().describe("Original filename"),
+      mimetype: z.string().optional().describe("File MIME type"),
+    },
+  },
+  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }) => {
+    try {
+      // Convert base64 to buffer
+      const buffer = Buffer.from(file, "base64");
+
+      // Create FormData for multipart upload
+      const formData = new FormData();
+
+      // Add the file as a buffer with filename
+      formData.append("file", buffer, {
+        filename: filename || "uploaded-image.jpg",
+        contentType: mimetype || "image/jpeg",
+      });
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/images`, formData, {
+        headers: {
+          ...formData.getHeaders(), // This sets Content-Type: multipart/form-data
+        },
+      });
 
       return {
         content: [
@@ -1601,6 +1673,46 @@ server.registerTool(
   }
 );
 
+// Revert Staging Site
+server.registerTool(
+  "revert_staging_site_page",
+  {
+    title: "Revert Staging Site",
+    description: "Revert a staging site to a previous state",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content site ID"),
+      stagingSiteId: z.string().describe("Staging site ID"),
+      pageId: z.string().describe("Page ID"),
+      reason: z.string().optional().describe("Reason for reversion"),
+    },
+  },
+  async ({ contentSiteId, stagingSiteId, reason, pageId }) => {
+    try {
+      const payload = { reason };
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/revert`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: handleApiError(error),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
 // Get Staging Site Page
 server.registerTool(
   "get_staging_site_page",
@@ -1931,6 +2043,7 @@ server.registerResource(
         },
         membership: {
           createUser: "POST /tools/membership/users - Create user",
+          createUserProfileImage: "POST /tools/files/users/:id/profile-image - Update user image",
           getUser: "GET /tools/membership/users/:id - Get user details",
           updateUser: "PUT /tools/membership/users/:id - Update user",
           deleteUser: "DELETE /tools/membership/users/:id - Delete user",
@@ -1959,11 +2072,14 @@ server.registerResource(
           cloneStagingSite: "POST /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/clone - Clone staging site",
           getStagingSiteLogs: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/logs - Get staging site logs",
           getPublishedSites: "GET /tools/content-sites/:contentSiteId/published-sites - Get published sites",
+          createStagingSiteImage: "POST /tools/files/content-sites/:contentSiteId/staging-sites/:stagingSiteId/images - Create staging site image",
+          createStagingSiteFile: "POST /tools/files/content-sites/:contentSiteId/staging-sites/:stagingSiteId/files - Create staging site file",
         },
         stagingSitePages: {
           createStagingSitePage: "POST /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages - Create staging site page",
           getStagingSitePage: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId - Get staging site page",
           updateStagingSitePage: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId - Update staging site page",
+          revertStagingSitePage: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/revert - Revert staging site page",
           deleteStagingSitePage: "DELETE /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId - Delete staging site page",
           getStagingSitePageLogs: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/logs - Get staging site page logs",
         },
