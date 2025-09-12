@@ -1606,7 +1606,7 @@ server.registerTool(
   "get_staging_site_page",
   {
     title: "Get Staging Site Page",
-    description: "Get details of a staging site page",
+    description: "Get details of a staging site page. Use the previewUrl from the get_staging_site response to view the page changes in real time.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
