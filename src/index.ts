@@ -239,17 +239,12 @@ server.registerTool(
   "get_ref_data",
   {
     title: "Get Reference Data",
-    description: "Get system reference data and lookups",
-    inputSchema: {
-      category: z.string().optional().describe("Reference data category to filter by"),
-    },
+    description: "Get system reference data and lookups for global use. For sections types call the get_staging_site_configuration endpoint.",
+    inputSchema: {},
   },
-  async ({ category }) => {
+  async () => {
     try {
-      const params = new URLSearchParams();
-      if (category) params.append("category", category);
-
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/system/refdata?${params}`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/system/refdata`);
 
       return {
         content: [
@@ -274,47 +269,6 @@ server.registerTool(
 );
 
 // ========== MEMBERSHIP MANAGEMENT TOOLS ==========
-
-// Register User
-server.registerTool(
-  "register_user",
-  {
-    title: "Register User",
-    description: "Register a new user in the system with account creation",
-    inputSchema: {
-      email: z.string().email().describe("User email address"),
-      password: z.string().describe("User password"),
-      firstName: z.string().optional().describe("User first name"),
-      lastName: z.string().optional().describe("User last name"),
-      accountName: z.string().optional().describe("Account name to create"),
-    },
-  },
-  async ({ email, password, firstName, lastName, accountName }) => {
-    try {
-      const payload = { email, password, firstName, lastName, accountName };
-      const response: AxiosResponse<ApiResponse<User>> = await apiClient.post("/tools/membership/register", payload);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(response.data, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: handleApiError(error),
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
 
 // Create User
 server.registerTool(
@@ -492,6 +446,47 @@ server.registerTool(
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/membership/users/${id}`, {
         data: payload,
       });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: handleApiError(error),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Create account
+server.registerTool(
+  "create_account",
+  {
+    title: "Create Account",
+    description: "Create a new user account in the system",
+    inputSchema: {
+      email: z.string().email().describe("User email address"),
+      password: z.string().describe("User password"),
+      firstName: z.string().optional().describe("User first name"),
+      lastName: z.string().optional().describe("User last name"),
+      accountName: z.string().optional().describe("Account name to create"),
+    },
+  },
+  async ({ email, password, firstName, lastName, accountName }) => {
+    try {
+      const payload = { email, password, firstName, lastName, accountName };
+      const response: AxiosResponse<ApiResponse<User>> = await apiClient.post("/tools/membership/register", payload);
 
       return {
         content: [
@@ -1291,7 +1286,7 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       pageId: z.string().describe("Page ID"),
       sectionType: z.string().describe("Section type"),
-      content: z.record(z.any()).optional().describe("Section content"),
+      content: z.record(z.any()).optional().describe("Section content which is a JSON object. The structure depends on the section type defined in the schema. The schema can be retrieved using the get_staging_site_configuration tool."),
     },
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionType, content }) => {
@@ -1371,7 +1366,7 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       pageId: z.string().describe("Page ID"),
       sectionId: z.string().describe("Section ID"),
-      content: z.record(z.any()).optional().describe("Section content"),
+      content: z.record(z.any()).optional().describe("Section content which is a JSON object. The structure depends on the section type defined in the schema. The schema can be retrieved using the get_staging_site_configuration tool."),
       order: z.number().optional().describe("Section order"),
     },
   },
@@ -1935,11 +1930,11 @@ server.registerResource(
           ping: "GET /tools/ping - Test authentication and connection",
         },
         membership: {
-          register: "POST /tools/membership/register - Register new user",
           createUser: "POST /tools/membership/users - Create user",
           getUser: "GET /tools/membership/users/:id - Get user details",
           updateUser: "PUT /tools/membership/users/:id - Update user",
           deleteUser: "DELETE /tools/membership/users/:id - Delete user",
+          createAccount: "POST /tools/membership/register - Create account with user",
           getAccount: "GET /tools/membership/account - Get account info",
           updateAccount: "PUT /tools/membership/account - Update account",
         },
