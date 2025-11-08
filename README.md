@@ -6,6 +6,10 @@ A comprehensive Model Context Protocol (MCP) server that provides complete commu
 
 https://www.youtube.com/watch?v=xGGwcrI7gSo&feature=youtu.be
 
+<a href="https://glama.ai/mcp/servers/@Headlesshost/mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@Headlesshost/mcp-server/badge" alt="Kapiti Server MCP server" />
+</a>
+
 ## Installation
 
 1. Clone this repository
