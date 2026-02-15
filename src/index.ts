@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 
-// Suppress console output during dotenv loading
-const originalConsoleLog = console.log;
-console.log = () => {};
-
 import dotenv from "dotenv";
 dotenv.config();
-
-// Restore console.log for debugging purposes
-console.log = originalConsoleLog;
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -19,142 +12,41 @@ import FormData from "form-data";
 // Configuration
 const API_BASE_URL = "https://api.headlesshost.com";
 const API_KEY = process.env.HEADLESSHOST_API_KEY || "YOUR API KEY HERE";
+
 // Create axios instance with default config
+// Note: Content-Type is NOT set here as a default so that FormData uploads
+// can use their own multipart/form-data content type with boundary.
+// Axios automatically sets Content-Type: application/json for object payloads.
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    "Content-Type": "application/json",
     ...(API_KEY && { Authorization: `Bearer ${API_KEY}` }),
   },
   timeout: 30000,
 });
 
 // Types for Headlesshost API responses
-interface ApiResponse<T = any> {
+interface ApiResponse {
   success: boolean;
-  data?: T;
+  data?: any;
   message?: string;
   statusCode?: number;
 }
 
-// Auth context interface
-interface AuthUser {
-  userId: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  role?: string;
-}
-
-// Common command/query interface
-interface IAuthContext {
-  _user: AuthUser;
-}
-
-// Membership entities
-interface User {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  isActive: boolean;
-  role?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface Account {
-  id: string;
-  name: string;
-  description?: string;
-  website?: string;
-  contactEmail?: string;
-  contactPhone?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface Team {
-  id: string;
-  name: string;
-  description?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ContentSite entities
-interface ContentSite {
-  id: string;
-  name: string;
-  description?: string;
-  accountId: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface StagingSite {
-  id: string;
-  contentSiteId: string;
-  name: string;
-  description?: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// System entities
-interface RefData {
-  category: string;
-  items: Array<{
-    key: string;
-    value: string;
-    metadata?: any;
-  }>;
-}
-
-const validClaims = [
-  "Administrator",
-  "PageCreator",
-  "PageEditor",
-  "PageDeleter",
-  "PageMover",
-  "SectionCreator",
-  "SectionEditor",
-  "SectionDeleter",
-  "SectionMover",
-  "ContentDesigner",
-  "Publisher",
-  "BusinessDeleter",
-  "BusinessEditor",
-  "BusinessCreator",
-  "PublishApproval",
-  "PublishDeleter",
-  "Super",
-  "StageCreator",
-  "StageDeleter",
-  "SiteMerger",
-  "CatalogCreator",
-  "CatalogEditor",
-  "CatalogDeleter",
-  "BusinessUserCreator",
-  "BusinessUserEditor",
-  //wrap
-  "BusinessUserDeleter",
-] as const;
-
 // Create MCP server
-const server = new McpServer({
-  name: "headlesshost-tools-server",
-  version: "1.0.0",
-  capabilities: {
-    tools: {},
-    resources: {},
+const server = new McpServer(
+  {
+    name: "headlesshost-tools-server",
+    version: "1.3.0",
   },
-});
+  {
+    capabilities: {
+      logging: {},
+    },
+  }
+);
 
-// Helper function to handle API errors
+// Helper function to handle API errors and send structured log to client
 function handleApiError(error: any): string {
   if (error.response) {
     return `API Error ${error.response.status}: ${error.response.data?.message || error.response.statusText}`;
@@ -162,6 +54,14 @@ function handleApiError(error: any): string {
     return "Network Error: Unable to reach API server";
   } else {
     return `Error: ${error.message}`;
+  }
+}
+
+async function logError(message: string): Promise<void> {
+  try {
+    await server.server.sendLoggingMessage({ level: "error", data: message });
+  } catch {
+    // Client may not support logging; silently ignore
   }
 }
 
@@ -174,8 +74,9 @@ server.registerTool(
     title: "Ping API",
     description: "Test authentication and connection to the Headlesshost API",
     inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async () => {
+  async (_args, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.get("/tools/ping");
 
@@ -188,11 +89,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -208,8 +111,9 @@ server.registerTool(
     title: "Health Check",
     description: "Check the health status of the Headlesshost API",
     inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async () => {
+  async (_args, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.get("/tools/health");
 
@@ -222,11 +126,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -242,8 +148,9 @@ server.registerTool(
     title: "Get Reference Data",
     description: "Get system reference data and lookups for global use. For sections types call the get_staging_site_configuration endpoint.",
     inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async () => {
+  async (_args, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/system/refdata`);
 
@@ -256,11 +163,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -287,8 +196,9 @@ server.registerTool(
         .optional()
         .describe("User roles/claims (string or array of strings)"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ email, firstName, lastName, password, claims }) => {
+  async ({ email, firstName, lastName, password, claims }, ctx) => {
     try {
       // Build payload object more carefully
       const payload: any = {
@@ -312,9 +222,7 @@ server.registerTool(
         // If claims is an empty array or invalid, don't include it in payload
       }
 
-      console.error("Create user payload:", JSON.stringify(payload, null, 2)); // Debug log
-
-      const response: AxiosResponse<ApiResponse<User>> = await apiClient.post("/tools/membership/users", payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/membership/users", payload);
 
       return {
         content: [
@@ -325,11 +233,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -347,10 +257,11 @@ server.registerTool(
     inputSchema: {
       id: z.string().describe("User ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ id }) => {
+  async ({ id }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<User>> = await apiClient.get(`/tools/membership/users/${id}`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/membership/users/${id}`);
 
       return {
         content: [
@@ -361,11 +272,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -375,6 +288,16 @@ server.registerTool(
 );
 
 // Update User
+const validClaims = [
+  "Administrator", "PageCreator", "PageEditor", "PageDeleter", "PageMover",
+  "SectionCreator", "SectionEditor", "SectionDeleter", "SectionMover",
+  "ContentDesigner", "Publisher", "BusinessDeleter", "BusinessEditor",
+  "BusinessCreator", "PublishApproval", "PublishDeleter", "Super",
+  "StageCreator", "StageDeleter", "SiteMerger", "CatalogCreator",
+  "CatalogEditor", "CatalogDeleter", "BusinessUserCreator",
+  "BusinessUserEditor", "BusinessUserDeleter",
+] as const;
+
 server.registerTool(
   "update_user",
   {
@@ -387,14 +310,15 @@ server.registerTool(
       lastName: z.string().optional().describe("Last name"),
       claims: z
         .union([
-          z.enum(validClaims), // single claim
-          z.array(z.enum(validClaims)), // multiple claims
+          z.enum(validClaims),
+          z.array(z.enum(validClaims)),
         ])
         .optional()
         .describe(`User roles/claims (choose from: ${validClaims.join(", ")})`),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ id, email, firstName, lastName, claims }) => {
+  async ({ id, email, firstName, lastName, claims }, ctx) => {
     try {
       const payload: any = {};
       if (email) payload.email = email;
@@ -406,7 +330,7 @@ server.registerTool(
         payload.claims = Array.isArray(claims) ? claims : [claims];
       }
 
-      const response: AxiosResponse<ApiResponse<User>> = await apiClient.put(`/tools/membership/users/${id}`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/membership/users/${id}`, payload);
 
       return {
         content: [
@@ -417,11 +341,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -440,8 +366,9 @@ server.registerTool(
       id: z.string().describe("User ID"),
       reason: z.string().optional().describe("Reason for deletion"),
     },
+    annotations: { destructiveHint: true },
   },
-  async ({ id, reason }) => {
+  async ({ id, reason }, ctx) => {
     try {
       const payload = { reason };
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/membership/users/${id}`, {
@@ -457,11 +384,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -483,11 +412,12 @@ server.registerTool(
       lastName: z.string().optional().describe("User last name"),
       accountName: z.string().optional().describe("Account name to create"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ email, password, firstName, lastName, accountName }) => {
+  async ({ email, password, firstName, lastName, accountName }, ctx) => {
     try {
       const payload = { email, password, firstName, lastName, accountName };
-      const response: AxiosResponse<ApiResponse<User>> = await apiClient.post("/tools/membership/register", payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/membership/register", payload);
 
       return {
         content: [
@@ -498,11 +428,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -518,10 +450,11 @@ server.registerTool(
     title: "Get Account",
     description: "Get current account information",
     inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async () => {
+  async (_args, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<Account>> = await apiClient.get(`/tools/membership/account`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/membership/account`);
       return {
         content: [
           {
@@ -531,11 +464,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -553,13 +488,14 @@ server.registerTool(
     inputSchema: {
       name: z.string().optional().describe("Account name"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ name }) => {
+  async ({ name }, ctx) => {
     try {
       const payload: any = {};
       if (name) payload.name = name;
 
-      const response: AxiosResponse<ApiResponse<Account>> = await apiClient.put("/tools/membership/account", payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.put("/tools/membership/account", payload);
 
       return {
         content: [
@@ -570,11 +506,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -595,8 +533,9 @@ server.registerTool(
       userId: z.string().describe("User ID"),
       image: z.string().describe("Base64 encoded file data"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ userId, image }) => {
+  async ({ userId, image }, ctx) => {
     try {
       const payload = { image };
       const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/users/${userId}/profile-image`, payload);
@@ -610,11 +549,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -636,16 +577,15 @@ server.registerTool(
       filename: z.string().optional().describe("Original filename"),
       mimetype: z.string().optional().describe("File MIME type"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }) => {
+  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }, ctx) => {
     try {
-      // Convert base64 to buffer
-      const buffer = Buffer.from(file, "base64");
+      // Strip data URI prefix if present (e.g. "data:application/pdf;base64,...")
+      const base64Data = file.includes(",") ? file.split(",")[1] : file;
+      const buffer = Buffer.from(base64Data, "base64");
 
-      // Create FormData for multipart upload
       const formData = new FormData();
-
-      // Add the file as a buffer with filename
       formData.append("file", buffer, {
         filename: filename || "uploaded-file.txt",
         contentType: mimetype || "application/octet-stream",
@@ -653,8 +593,11 @@ server.registerTool(
 
       const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/files`, formData, {
         headers: {
-          ...formData.getHeaders(), // This sets Content-Type: multipart/form-data
+          ...formData.getHeaders(),
         },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 120000,
       });
 
       return {
@@ -666,11 +609,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -692,16 +637,15 @@ server.registerTool(
       filename: z.string().optional().describe("Original filename"),
       mimetype: z.string().optional().describe("File MIME type"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }) => {
+  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }, ctx) => {
     try {
-      // Convert base64 to buffer
-      const buffer = Buffer.from(file, "base64");
+      // Strip data URI prefix if present (e.g. "data:image/png;base64,...")
+      const base64Data = file.includes(",") ? file.split(",")[1] : file;
+      const buffer = Buffer.from(base64Data, "base64");
 
-      // Create FormData for multipart upload
       const formData = new FormData();
-
-      // Add the file as a buffer with filename
       formData.append("file", buffer, {
         filename: filename || "uploaded-image.jpg",
         contentType: mimetype || "image/jpeg",
@@ -709,8 +653,11 @@ server.registerTool(
 
       const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/images`, formData, {
         headers: {
-          ...formData.getHeaders(), // This sets Content-Type: multipart/form-data
+          ...formData.getHeaders(),
         },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 120000,
       });
 
       return {
@@ -722,11 +669,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -747,8 +696,9 @@ server.registerTool(
       name: z.string().describe("Content site name"),
       sampleDataId: z.string().optional().describe("Optional sample data ID to initialize the site. The sample data list can be found in the ref data."),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ name, sampleDataId }) => {
+  async ({ name, sampleDataId }, ctx) => {
     try {
       const payload = { name, sampleDataId };
       const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/content-sites", payload);
@@ -762,11 +712,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -782,8 +734,9 @@ server.registerTool(
     title: "Get Content Sites",
     description: "Get all content sites in the current account",
     inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({}) => {
+  async ({}, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites`);
 
@@ -796,11 +749,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -818,8 +773,9 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}`);
 
@@ -832,11 +788,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -849,8 +807,8 @@ server.registerTool(
 server.registerTool(
   "update_content_site",
   {
-    title: "Update Staging Site",
-    description: "Update staging site information",
+    title: "Update Content Site",
+    description: "Update content site information",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       name: z.string().optional().describe("Content Site Name"),
@@ -865,8 +823,9 @@ server.registerTool(
       productionUrl: z.string().optional().describe("Content Site Production URL"),
       repoUrl: z.string().optional().describe("Content Site Repository URL"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, name, contactEmail, billingEmail, addressLine1, addressLine2, city, state, country, postalCode, productionUrl, repoUrl }) => {
+  async ({ contentSiteId, name, contactEmail, billingEmail, addressLine1, addressLine2, city, state, country, postalCode, productionUrl, repoUrl }, ctx) => {
     try {
       const payload: any = {};
       if (name) payload.name = name;
@@ -892,11 +851,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -915,8 +876,9 @@ server.registerTool(
       contentSiteId: z.string().describe("Content Site ID"),
       reason: z.string().optional().describe("Reason for deletion"),
     },
+    annotations: { destructiveHint: true },
   },
-  async ({ contentSiteId, reason }) => {
+  async ({ contentSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}`, {
@@ -932,11 +894,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -963,8 +927,9 @@ server.registerTool(
       stageUrl: z.string().optional().describe("Staging site stage URL"),
       guideUrl: z.string().optional().describe("Staging site guide URL"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, name, locale, isHead, content, stageUrl, guideUrl }) => {
+  async ({ contentSiteId, stagingSiteId, name, locale, isHead, content, stageUrl, guideUrl }, ctx) => {
     try {
       const payload: any = {};
       if (name) payload.name = name;
@@ -985,11 +950,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1009,8 +976,9 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging Site ID"),
       reason: z.string().optional().describe("Reason for deletion"),
     },
+    annotations: { destructiveHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, reason }) => {
+  async ({ contentSiteId, stagingSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`, {
@@ -1026,11 +994,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1053,8 +1023,9 @@ server.registerTool(
       publishAt: z.date().optional().describe("When to publish the staging site"),
       previewUrl: z.string().optional().describe("Preview URL for the staging site"),
     },
+    annotations: { destructiveHint: false, openWorldHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, comments, isApproved, publishAt, previewUrl }) => {
+  async ({ contentSiteId, stagingSiteId, comments, isApproved, publishAt, previewUrl }, ctx) => {
     try {
       const payload = { comments, isApproved, publishAt, previewUrl };
       const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/publish`, payload);
@@ -1068,11 +1039,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1091,10 +1064,11 @@ server.registerTool(
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId }) => {
+  async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<StagingSite>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`);
 
       return {
         content: [
@@ -1105,11 +1079,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1128,10 +1104,11 @@ server.registerTool(
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId }) => {
+  async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<StagingSite>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`);
 
       return {
         content: [
@@ -1142,11 +1119,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1165,10 +1144,11 @@ server.registerTool(
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId }) => {
+  async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<StagingSite>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/configuration`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/configuration`);
 
       return {
         content: [
@@ -1179,11 +1159,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1202,10 +1184,11 @@ server.registerTool(
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId }) => {
+  async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/logs`);
 
       return {
         content: [
@@ -1216,11 +1199,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1238,12 +1223,11 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
-      const params = new URLSearchParams();
-
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/published-sites`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/published-sites`);
 
       return {
         content: [
@@ -1254,11 +1238,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1278,8 +1264,9 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       reason: z.string().optional().describe("Reason for reversion"),
     },
+    annotations: { destructiveHint: false, idempotentHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, reason }) => {
+  async ({ contentSiteId, stagingSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
       const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/revert`, payload);
@@ -1293,11 +1280,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1317,11 +1306,12 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       newName: z.string().optional().describe("Name for the cloned site"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, newName }) => {
+  async ({ contentSiteId, stagingSiteId, newName }, ctx) => {
     try {
       const payload = { newName };
-      const response: AxiosResponse<ApiResponse<StagingSite>> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/clone`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/clone`, payload);
 
       return {
         content: [
@@ -1332,11 +1322,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1360,11 +1352,12 @@ server.registerTool(
       sectionType: z.string().describe("Section type"),
       content: z.record(z.any()).optional().describe("Section content which is a JSON object. The structure depends on the section type defined in the schema. The schema can be retrieved using the get_staging_site_configuration tool."),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionType, content }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionType, content }, ctx) => {
     try {
       const payload = { sectionType, content };
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections`, payload);
 
       return {
         content: [
@@ -1375,11 +1368,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1400,10 +1395,11 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       sectionId: z.string().describe("Section ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
 
       return {
         content: [
@@ -1414,11 +1410,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1441,14 +1439,15 @@ server.registerTool(
       content: z.record(z.any()).optional().describe("Section content which is a JSON object. The structure depends on the section type defined in the schema. The schema can be retrieved using the get_staging_site_configuration tool."),
       order: z.number().optional().describe("Section order"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId, content, order }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, content, order }, ctx) => {
     try {
       const payload: any = {};
       if (content) payload.content = content;
       if (order !== undefined) payload.order = order;
 
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`, payload);
 
       return {
         content: [
@@ -1459,11 +1458,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1484,8 +1485,9 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       sectionId: z.string().describe("Section ID"),
     },
+    annotations: { destructiveHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
 
@@ -1498,11 +1500,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1524,8 +1528,9 @@ server.registerTool(
       sectionId: z.string().describe("Section ID"),
       publishMessage: z.string().optional().describe("Message for this publish"),
     },
+    annotations: { destructiveHint: false, openWorldHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId, publishMessage }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, publishMessage }, ctx) => {
     try {
       const payload = { publishMessage };
       const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/publish`, payload);
@@ -1539,11 +1544,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1564,8 +1571,9 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       sectionId: z.string().describe("Section ID"),
     },
+    annotations: { destructiveHint: false, idempotentHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/revert`);
 
@@ -1578,11 +1586,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1603,10 +1613,11 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       sectionId: z.string().describe("Section Common ID (CID)"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, sectionId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/logs`);
 
       return {
         content: [
@@ -1617,11 +1628,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1645,11 +1658,12 @@ server.registerTool(
       identifier: z.string().describe("Page identifier"),
       content: z.record(z.any()).optional().describe("Page content"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, title, identifier, content }) => {
+  async ({ contentSiteId, stagingSiteId, title, identifier, content }, ctx) => {
     try {
       const payload = { title, identifier, content };
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`, payload);
 
       return {
         content: [
@@ -1660,11 +1674,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1685,8 +1701,9 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       reason: z.string().optional().describe("Reason for reversion"),
     },
+    annotations: { destructiveHint: false, idempotentHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, reason, pageId }) => {
+  async ({ contentSiteId, stagingSiteId, reason, pageId }, ctx) => {
     try {
       const payload = { reason };
       const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/revert`, payload);
@@ -1700,11 +1717,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1725,13 +1744,13 @@ server.registerTool(
       pageId: z.string().describe("Page ID"),
       includeSections: z.boolean().describe("Include page sections"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, includeSections }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, includeSections }, ctx) => {
     try {
-      const params = new URLSearchParams();
-      if (includeSections) params.append("includeSections", "true");
-
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}?${params}`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, {
+        params: { ...(includeSections && { includeSections: "true" }) },
+      });
 
       return {
         content: [
@@ -1742,11 +1761,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1769,15 +1790,16 @@ server.registerTool(
       identifier: z.string().describe("Page identifier"),
       order: z.number().optional().describe("Page order"),
     },
+    annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId, title, identifier, order }) => {
+  async ({ contentSiteId, stagingSiteId, pageId, title, identifier, order }, ctx) => {
     try {
       const payload: any = {};
       if (title) payload.title = title;
       if (identifier) payload.identifier = identifier;
       if (order !== undefined) payload.order = order;
 
-      const response: AxiosResponse<ApiResponse<any>> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, payload);
 
       return {
         content: [
@@ -1788,11 +1810,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1812,8 +1836,9 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       pageId: z.string().describe("Page ID"),
     },
+    annotations: { destructiveHint: true },
   },
-  async ({ contentSiteId, stagingSiteId, pageId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId }, ctx) => {
     try {
       const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`);
 
@@ -1826,11 +1851,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1850,10 +1877,11 @@ server.registerTool(
       stagingSiteId: z.string().describe("Staging site ID"),
       pageId: z.string().describe("Page common ID (CID)"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, pageId }) => {
+  async ({ contentSiteId, stagingSiteId, pageId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/logs`);
 
       return {
         content: [
@@ -1864,11 +1892,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1888,10 +1918,11 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/logs`);
       return {
         content: [
           {
@@ -1901,11 +1932,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1923,10 +1956,11 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/hits`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/hits`);
 
       return {
         content: [
@@ -1937,11 +1971,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1959,10 +1995,11 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<User[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/accounts`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/accounts`);
 
       return {
         content: [
@@ -1973,11 +2010,13 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
           },
         ],
         isError: true,
@@ -1995,10 +2034,11 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
+    annotations: { readOnlyHint: true, destructiveHint: false },
   },
-  async ({ contentSiteId }) => {
+  async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse<any[]>> = await apiClient.get(`/tools/content-sites/${contentSiteId}/claims`);
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/claims`);
 
       return {
         content: [
@@ -2009,11 +2049,381 @@ server.registerTool(
         ],
       };
     } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
       return {
         content: [
           {
             type: "text",
-            text: handleApiError(error),
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ========== STAGING SITE AUDIENCE MANAGEMENT TOOLS ==========
+
+// Create Site Audience
+server.registerTool(
+  "create_staging_site_audience",
+  {
+    title: "Create Staging Site Audience",
+    description: "Create a new audience for a staging site. Audiences allow you to target content to specific locale and segment combinations.",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      localeId: z.string().optional().describe("Locale ID for the audience"),
+      segmentId: z.string().optional().describe("Segment ID for the audience (optional - omit for default segment)"),
+      content: z.record(z.any()).optional().describe("Audience content as a JSON object"),
+      type: z.string().optional().describe("Audience type: Header, Footer, or Globals (for site-level audiences)"),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, localeId, segmentId, content, type }, ctx) => {
+    try {
+      const payload: any = {};
+      if (localeId) payload.localeId = localeId;
+      if (segmentId) payload.segmentId = segmentId;
+      if (content) payload.content = content;
+      if (type) payload.type = type;
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Get Site Audience
+server.registerTool(
+  "get_staging_site_audience",
+  {
+    title: "Get Staging Site Audience",
+    description: "Get details of a specific staging site audience by ID",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      audienceId: z.string().describe("Audience ID"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, audienceId }, ctx) => {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Update Site Audience
+server.registerTool(
+  "update_staging_site_audience",
+  {
+    title: "Update Staging Site Audience",
+    description: "Update an existing staging site audience",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      audienceId: z.string().describe("Audience ID"),
+      content: z.record(z.any()).optional().describe("Updated audience content as a JSON object"),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, audienceId, content }, ctx) => {
+    try {
+      const payload: any = {};
+      if (content) payload.content = content;
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Delete Site Audience
+server.registerTool(
+  "delete_staging_site_audience",
+  {
+    title: "Delete Staging Site Audience",
+    description: "Delete a staging site audience. Note: the base audience (default locale with no segment) cannot be deleted.",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      audienceId: z.string().describe("Audience ID"),
+    },
+    annotations: { destructiveHint: true },
+  },
+  async ({ contentSiteId, stagingSiteId, audienceId }, ctx) => {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ========== STAGING SITE SECTION AUDIENCE MANAGEMENT TOOLS ==========
+
+// Create Section Audience
+server.registerTool(
+  "create_staging_site_section_audience",
+  {
+    title: "Create Staging Site Section Audience",
+    description: "Create a new audience override for a specific section. This allows you to customize section content for a specific locale/segment combination.",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      pageId: z.string().describe("Page ID"),
+      sectionId: z.string().describe("Section ID"),
+      localeId: z.string().optional().describe("Locale ID for the audience"),
+      segmentId: z.string().optional().describe("Segment ID for the audience (optional - omit for default segment)"),
+      content: z.record(z.any()).optional().describe("Section audience content as a JSON object"),
+      excluded: z.boolean().optional().describe("Whether this section should be excluded for this audience"),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, localeId, segmentId, content, excluded }, ctx) => {
+    try {
+      const payload: any = {};
+      if (localeId) payload.localeId = localeId;
+      if (segmentId) payload.segmentId = segmentId;
+      if (content) payload.content = content;
+      if (excluded !== undefined) payload.excluded = excluded;
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Get Section Audience
+server.registerTool(
+  "get_staging_site_section_audience",
+  {
+    title: "Get Staging Site Section Audience",
+    description: "Get details of a specific section audience by ID",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      pageId: z.string().describe("Page ID"),
+      sectionId: z.string().describe("Section ID"),
+      audienceId: z.string().describe("Audience ID"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, audienceId }, ctx) => {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Update Section Audience
+server.registerTool(
+  "update_staging_site_section_audience",
+  {
+    title: "Update Staging Site Section Audience",
+    description: "Update an existing section audience override",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      pageId: z.string().describe("Page ID"),
+      sectionId: z.string().describe("Section ID"),
+      audienceId: z.string().describe("Audience ID"),
+      content: z.record(z.any()).optional().describe("Updated section audience content as a JSON object"),
+      excluded: z.boolean().optional().describe("Whether this section should be excluded for this audience"),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, audienceId, content, excluded }, ctx) => {
+    try {
+      const payload: any = {};
+      if (content) payload.content = content;
+      if (excluded !== undefined) payload.excluded = excluded;
+
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Delete Section Audience
+server.registerTool(
+  "delete_staging_site_section_audience",
+  {
+    title: "Delete Staging Site Section Audience",
+    description: "Delete a section audience override",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      pageId: z.string().describe("Page ID"),
+      sectionId: z.string().describe("Section ID"),
+      audienceId: z.string().describe("Audience ID"),
+    },
+    annotations: { destructiveHint: true },
+  },
+  async ({ contentSiteId, stagingSiteId, pageId, sectionId, audienceId }, ctx) => {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
           },
         ],
         isError: true,
@@ -2091,6 +2501,16 @@ server.registerResource(
           publishStagingSiteSection: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/publish - Publish staging site section",
           revertStagingSiteSection: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/revert - Revert staging site section",
           getStagingSiteSectionLogs: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/logs - Get staging site section logs",
+        },
+        stagingSiteAudiences: {
+          createStagingSiteAudience: "POST /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/audiences - Create staging site audience",
+          getStagingSiteAudience: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/audiences/:audienceId - Get staging site audience",
+          updateStagingSiteAudience: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/audiences/:audienceId - Update staging site audience",
+          deleteStagingSiteAudience: "DELETE /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/audiences/:audienceId - Delete staging site audience",
+          createStagingSiteSectionAudience: "POST /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/audiences - Create section audience",
+          getStagingSiteSectionAudience: "GET /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/audiences/:audienceId - Get section audience",
+          updateStagingSiteSectionAudience: "PUT /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/audiences/:audienceId - Update section audience",
+          deleteStagingSiteSectionAudience: "DELETE /tools/content-sites/:contentSiteId/staging-sites/:stagingSiteId/pages/:pageId/sections/:sectionId/audiences/:audienceId - Delete section audience",
         },
         system: {
           getRefData: "GET /tools/system/refdata - Get reference data",
