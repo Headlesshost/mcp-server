@@ -1,11 +1,11 @@
 {
   "name": "headlesshost-mcp-server",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "MCP server for Headlesshost API tools endpoints",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "headlesshost-mcp-server": "./build/index.js"
+    "headlesshost-mcp-server": "build/index.js"
   },
   "scripts": {
     "build": "tsc && chmod +x build/index.js",

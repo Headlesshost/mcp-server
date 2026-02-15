@@ -103,111 +103,111 @@ All tools include MCP annotations (`readOnlyHint`, `destructiveHint`, `idempoten
 
 ### General (3)
 
-| Tool | Description |
-|------|-------------|
-| `ping` | Test authentication and connection |
-| `health` | Check API health status |
+| Tool           | Description                           |
+| -------------- | ------------------------------------- |
+| `ping`         | Test authentication and connection    |
+| `health`       | Check API health status               |
 | `get_ref_data` | Get system reference data and lookups |
 
 ### User Management (4)
 
-| Tool | Description |
-|------|-------------|
+| Tool          | Description                              |
+| ------------- | ---------------------------------------- |
 | `create_user` | Create a new user in the current account |
-| `get_user` | Get user details by ID |
-| `update_user` | Update user information and claims |
-| `delete_user` | Delete a user from the system |
+| `get_user`    | Get user details by ID                   |
+| `update_user` | Update user information and claims       |
+| `delete_user` | Delete a user from the system            |
 
 ### Account Management (3)
 
-| Tool | Description |
-|------|-------------|
-| `create_account` | Create a new user account |
-| `get_account` | Get current account information |
-| `update_account` | Update account information |
+| Tool             | Description                     |
+| ---------------- | ------------------------------- |
+| `create_account` | Create a new user account       |
+| `get_account`    | Get current account information |
+| `update_account` | Update account information      |
 
 ### File Uploads (3)
 
-| Tool | Description |
-|------|-------------|
+| Tool                        | Description                       |
+| --------------------------- | --------------------------------- |
 | `upload_user_profile_image` | Upload a profile image for a user |
-| `upload_staging_site_file` | Upload a file to a staging site |
+| `upload_staging_site_file`  | Upload a file to a staging site   |
 | `upload_staging_site_image` | Upload an image to a staging site |
 
 ### Content Sites (5)
 
-| Tool | Description |
-|------|-------------|
-| `create_content_site` | Create a new content site |
-| `get_content_sites` | Get all content sites in the account |
-| `get_content_site` | Get content site details by ID |
-| `update_content_site` | Update content site information |
-| `delete_content_site` | Delete a content site |
+| Tool                  | Description                          |
+| --------------------- | ------------------------------------ |
+| `create_content_site` | Create a new content site            |
+| `get_content_sites`   | Get all content sites in the account |
+| `get_content_site`    | Get content site details by ID       |
+| `update_content_site` | Update content site information      |
+| `delete_content_site` | Delete a content site                |
 
 ### Staging Sites (9)
 
-| Tool | Description |
-|------|-------------|
-| `update_staging_site` | Update staging site information |
-| `delete_staging_site` | Delete a staging site |
-| `publish_staging_site` | Publish a staging site to make it live |
-| `get_staging_site` | Get staging site details |
-| `get_staging_site_pages` | Get staging site pages |
+| Tool                             | Description                                            |
+| -------------------------------- | ------------------------------------------------------ |
+| `update_staging_site`            | Update staging site information                        |
+| `delete_staging_site`            | Delete a staging site                                  |
+| `publish_staging_site`           | Publish a staging site to make it live                 |
+| `get_staging_site`               | Get staging site details                               |
+| `get_staging_site_pages`         | Get staging site pages                                 |
 | `get_staging_site_configuration` | Get staging site configuration including section types |
-| `get_staging_site_logs` | Get change logs since last publish |
-| `get_published_sites` | Get published sites for a content site |
-| `revert_staging_site` | Revert a staging site to a previous state |
-| `clone_staging_site` | Clone a staging site |
+| `get_staging_site_logs`          | Get change logs since last publish                     |
+| `get_published_sites`            | Get published sites for a content site                 |
+| `revert_staging_site`            | Revert a staging site to a previous state              |
+| `clone_staging_site`             | Clone a staging site                                   |
 
 ### Pages (6)
 
-| Tool | Description |
-|------|-------------|
-| `create_staging_site_page` | Create a new page |
-| `get_staging_site_page` | Get page details (with optional sections) |
-| `update_staging_site_page` | Update a page |
-| `delete_staging_site_page` | Delete a page |
-| `revert_staging_site_page` | Revert a page to a previous state |
-| `get_staging_site_page_logs` | Get page change logs since last publish |
+| Tool                         | Description                               |
+| ---------------------------- | ----------------------------------------- |
+| `create_staging_site_page`   | Create a new page                         |
+| `get_staging_site_page`      | Get page details (with optional sections) |
+| `update_staging_site_page`   | Update a page                             |
+| `delete_staging_site_page`   | Delete a page                             |
+| `revert_staging_site_page`   | Revert a page to a previous state         |
+| `get_staging_site_page_logs` | Get page change logs since last publish   |
 
 ### Sections (7)
 
-| Tool | Description |
-|------|-------------|
-| `create_staging_site_section` | Create a new section in a page |
-| `get_staging_site_section` | Get section details |
-| `update_staging_site_section` | Update a section |
-| `delete_staging_site_section` | Delete a section |
-| `publish_staging_site_section` | Publish a single section |
-| `revert_staging_site_section` | Revert a section to a previous state |
+| Tool                            | Description                                |
+| ------------------------------- | ------------------------------------------ |
+| `create_staging_site_section`   | Create a new section in a page             |
+| `get_staging_site_section`      | Get section details                        |
+| `update_staging_site_section`   | Update a section                           |
+| `delete_staging_site_section`   | Delete a section                           |
+| `publish_staging_site_section`  | Publish a single section                   |
+| `revert_staging_site_section`   | Revert a section to a previous state       |
 | `get_staging_site_section_logs` | Get section change logs since last publish |
 
 ### Site Audiences (4)
 
-| Tool | Description |
-|------|-------------|
+| Tool                           | Description                                                |
+| ------------------------------ | ---------------------------------------------------------- |
 | `create_staging_site_audience` | Create an audience (locale/segment combination) for a site |
-| `get_staging_site_audience` | Get audience details |
-| `update_staging_site_audience` | Update an audience |
-| `delete_staging_site_audience` | Delete an audience (base audience cannot be deleted) |
+| `get_staging_site_audience`    | Get audience details                                       |
+| `update_staging_site_audience` | Update an audience                                         |
+| `delete_staging_site_audience` | Delete an audience (base audience cannot be deleted)       |
 
 ### Section Audiences (4)
 
-| Tool | Description |
-|------|-------------|
+| Tool                                   | Description                               |
+| -------------------------------------- | ----------------------------------------- |
 | `create_staging_site_section_audience` | Create an audience override for a section |
-| `get_staging_site_section_audience` | Get section audience details |
-| `update_staging_site_section_audience` | Update a section audience override |
-| `delete_staging_site_section_audience` | Delete a section audience override |
+| `get_staging_site_section_audience`    | Get section audience details              |
+| `update_staging_site_section_audience` | Update a section audience override        |
+| `delete_staging_site_section_audience` | Delete a section audience override        |
 
 ### Analytics (4)
 
-| Tool | Description |
-|------|-------------|
-| `get_content_site_logs` | Get the last 15 activity logs |
-| `get_content_site_hits` | Get daily hit analytics |
-| `get_content_site_accounts` | Get associated accounts |
-| `get_content_site_claims` | Get current user claims |
+| Tool                        | Description                   |
+| --------------------------- | ----------------------------- |
+| `get_content_site_logs`     | Get the last 15 activity logs |
+| `get_content_site_hits`     | Get daily hit analytics       |
+| `get_content_site_accounts` | Get associated accounts       |
+| `get_content_site_claims`   | Get current user claims       |
 
 ## Resources
 

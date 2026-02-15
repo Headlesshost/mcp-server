@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-import dotenv from "dotenv";
-dotenv.config();
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -37,7 +34,7 @@ interface ApiResponse {
 const server = new McpServer(
   {
     name: "headlesshost-tools-server",
-    version: "1.3.0",
+    version: "1.3.1",
   },
   {
     capabilities: {
