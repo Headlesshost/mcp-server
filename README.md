@@ -60,7 +60,7 @@ Windows: %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "headlesshost-cms": {
       "command": "npx",
-      "args": ["headlesshost-mcp-server"],
+      "args": ["headlesshost-mcp-server@latest"],
       "env": {
         "HEADLESSHOST_API_KEY": "your-auth-token"
       }

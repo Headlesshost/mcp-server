@@ -40,7 +40,7 @@ const server = new McpServer(
     capabilities: {
       logging: {},
     },
-  }
+  },
 );
 
 // Helper function to handle API errors and send structured log to client
@@ -98,7 +98,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Health - Check API health status
@@ -135,7 +135,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Reference Data
@@ -172,7 +172,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== MEMBERSHIP MANAGEMENT TOOLS ==========
@@ -242,7 +242,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get User
@@ -281,19 +281,11 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update User
-const validClaims = [
-  "Administrator", "PageCreator", "PageEditor", "PageDeleter", "PageMover",
-  "SectionCreator", "SectionEditor", "SectionDeleter", "SectionMover",
-  "ContentDesigner", "Publisher", "BusinessDeleter", "BusinessEditor",
-  "BusinessCreator", "PublishApproval", "PublishDeleter", "Super",
-  "StageCreator", "StageDeleter", "SiteMerger", "CatalogCreator",
-  "CatalogEditor", "CatalogDeleter", "BusinessUserCreator",
-  "BusinessUserEditor", "BusinessUserDeleter",
-] as const;
+const validClaims = ["Administrator", "PageCreator", "PageEditor", "PageDeleter", "PageMover", "SectionCreator", "SectionEditor", "SectionDeleter", "SectionMover", "ContentDesigner", "Publisher", "BusinessDeleter", "BusinessEditor", "BusinessCreator", "PublishApproval", "PublishDeleter", "Super", "StageCreator", "StageDeleter", "SiteMerger", "CatalogCreator", "CatalogEditor", "CatalogDeleter", "BusinessUserCreator", "BusinessUserEditor", "BusinessUserDeleter"] as const;
 
 server.registerTool(
   "update_user",
@@ -306,10 +298,7 @@ server.registerTool(
       firstName: z.string().optional().describe("First name"),
       lastName: z.string().optional().describe("Last name"),
       claims: z
-        .union([
-          z.enum(validClaims),
-          z.array(z.enum(validClaims)),
-        ])
+        .union([z.enum(validClaims), z.array(z.enum(validClaims))])
         .optional()
         .describe(`User roles/claims (choose from: ${validClaims.join(", ")})`),
     },
@@ -350,7 +339,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete User
@@ -393,7 +382,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Create account
@@ -437,7 +426,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Account
@@ -473,7 +462,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Account
@@ -515,7 +504,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== FILE MANAGEMENT TOOLS ==========
@@ -558,7 +547,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Upload Staging Site File
@@ -618,7 +607,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Upload Staging Site Image
@@ -678,7 +667,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== CONTENT SITE MANAGEMENT TOOLS ==========
@@ -721,7 +710,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Content Sites
@@ -758,7 +747,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Content Site
@@ -766,7 +755,7 @@ server.registerTool(
   "get_content_site",
   {
     title: "Get Content Site",
-    description: "Get content site details by ID",
+    description: "Get content site details by ID. Returns site configuration, associated staging sites (workingSites), recent published versions (publishedSites), and team access information.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
     },
@@ -797,7 +786,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Content Site
@@ -860,7 +849,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Content Site
@@ -903,7 +892,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== STAGING SITE MANAGEMENT TOOLS ==========
@@ -959,7 +948,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Staging Site
@@ -1003,7 +992,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Publish Staging Site
@@ -1011,7 +1000,7 @@ server.registerTool(
   "publish_staging_site",
   {
     title: "Publish Staging Site",
-    description: "Publish a staging site to make it live",
+    description: "Publish a staging site to make it live. This creates a new published version from the current staging site state. The comments field should describe what changed in this publish. Set isApproved to true to make it the production version, or false for a publication that is ready to be approved. Optionally specify a publishAt date to schedule the publish for the future, or a previewUrl if this publish is being reviewed in an external system.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -1048,7 +1037,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site
@@ -1056,7 +1045,7 @@ server.registerTool(
   "get_staging_site",
   {
     title: "Get Staging Site",
-    description: "Get staging site details by ID",
+    description: "Get staging site details by ID. Returns comprehensive staging site information including configured locales, segments, and site-level audiences (without content). This is the source of truth for available locales and segments when creating audiences. The site-level audience metadata includes audience IDs, locale, and segment — use these IDs with get_staging_site_audience to retrieve full audience content.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1088,7 +1077,135 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
+);
+
+// Get Staging Site Settings
+server.registerTool(
+  "get_staging_site_settings",
+  {
+    title: "Get Staging Site Settings",
+    description: "Get staging site settings and metadata without content. Returns site configuration including locales, segments, and audience metadata. This is a lightweight alternative to get_staging_site that excludes section and page content. Use this when you only need to look up available locales and segments (e.g. before creating audiences).",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content site ID"),
+      stagingSiteId: z.string().describe("Staging site ID"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId }, ctx) => {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/settings`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// Update Staging Site Locales
+server.registerTool(
+  "update_staging_site_locales",
+  {
+    title: "Update Staging Site Locales",
+    description: "Update the locales configured on a staging site. Locales define the available languages/regions for audience targeting. Provide the full list of locale values — any existing locales not in the list will be removed. Use get_staging_site_settings to see currently configured locales. Requires Administrator access on the content site.",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      baseLocale: z.string().describe("The default base locale for the staging site (e.g. 'en-US')"),
+      locales: z.array(z.string()).describe("Array of locale values to configure (e.g. ['fr-GG', 'es-ES']). Any existing locales not in this list will be removed."),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, baseLocale, locales }, ctx) => {
+    try {
+      const payload = { baseLocale, locales };
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/locales`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+// Update Staging Site Segments
+server.registerTool(
+  "update_staging_site_segments",
+  {
+    title: "Update Staging Site Segments",
+    description: "Update the segments configured on a staging site. Segments define marketing or user groups for audience targeting. Each segment has a code (max 6 chars) and a description. Provide the full list of segments — any existing segments not in the list will be removed. Use get_staging_site_settings to see currently configured segments. Requires Administrator access on the content site.",
+    inputSchema: {
+      contentSiteId: z.string().describe("Content Site ID"),
+      stagingSiteId: z.string().describe("Staging Site ID"),
+      segments: z.array(z.object({
+        code: z.string().describe("Segment code (max 6 characters, e.g. 'YOUTH')"),
+        description: z.string().describe("Segment description (e.g. 'Youth demographic aged 18-25')"),
+      })).describe("Array of segments to configure. Any existing segments not in this list will be removed."),
+    },
+    annotations: { destructiveHint: false },
+  },
+  async ({ contentSiteId, stagingSiteId, segments }, ctx) => {
+    try {
+      const payload = { segments };
+      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/segments`, payload);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = handleApiError(error);
+      await logError(message);
+      return {
+        content: [
+          {
+            type: "text",
+            text: message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
 );
 
 // Get Staging Site Pages
@@ -1128,7 +1245,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Configuration
@@ -1136,7 +1253,7 @@ server.registerTool(
   "get_staging_site_configuration",
   {
     title: "Get Staging Site Configuration",
-    description: "Get staging site configuration by ID",
+    description: "Get staging site configuration by ID. Returns the section schemas (sectionSchema) and type schemas (typeSchema) that define the available section types and their content structure. Use this to understand what fields are required when creating or updating sections.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1168,7 +1285,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Logs
@@ -1208,7 +1325,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Published Sites
@@ -1247,7 +1364,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Revert Staging Site
@@ -1255,7 +1372,7 @@ server.registerTool(
   "revert_staging_site",
   {
     title: "Revert Staging Site",
-    description: "Revert a staging site to a previous state",
+    description: "Revert a staging site to its last published state. This discards all unpublished changes across all pages and sections in the staging site.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1289,7 +1406,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Clone Staging Site
@@ -1297,7 +1414,7 @@ server.registerTool(
   "clone_staging_site",
   {
     title: "Clone Staging Site",
-    description: "Clone a staging site",
+    description: "Clone a staging site to create a new staging site with the same content. Useful for creating a working copy to make changes without affecting the original staging site.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1331,7 +1448,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== WORKING SITE SECTION MANAGEMENT TOOLS ==========
@@ -1341,7 +1458,7 @@ server.registerTool(
   "create_staging_site_section",
   {
     title: "Create Staging Site Section",
-    description: "Create a new section in a staging site page",
+    description: "Create a new section in a staging site page. The sectionType must be one of the types defined in the staging site configuration. Use get_staging_site_configuration to retrieve the available section types and their content schemas before creating sections.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1377,7 +1494,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Section
@@ -1385,7 +1502,7 @@ server.registerTool(
   "get_staging_site_section",
   {
     title: "Get Staging Site Section",
-    description: "Get details of a staging site section",
+    description: "Get details of a staging site section. The response includes a metadata list of all audiences created for this section (without audience content). Each audience entry includes its ID, locale, and segment. Use these IDs with get_staging_site_section_audience to retrieve or with update_staging_site_section_audience to update the full audience content.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1419,7 +1536,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Staging Site Section
@@ -1427,7 +1544,7 @@ server.registerTool(
   "update_staging_site_section",
   {
     title: "Update Staging Site Section",
-    description: "Update a staging site section",
+    description: "Update a staging site section. The content structure must match the section's type schema. Use get_staging_site_configuration to retrieve the schema, or get_staging_site_section to see the current content structure before updating.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1467,7 +1584,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Staging Site Section
@@ -1509,7 +1626,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Publish Staging Site Section
@@ -1553,7 +1670,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Revert Staging Site Section
@@ -1561,7 +1678,7 @@ server.registerTool(
   "revert_staging_site_section",
   {
     title: "Revert Staging Site Section",
-    description: "Revert a staging site section to a previous state",
+    description: "Revert a staging site section to its last published state. This discards all unpublished changes to the section.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1595,7 +1712,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Section Logs
@@ -1603,7 +1720,7 @@ server.registerTool(
   "get_staging_site_section_logs",
   {
     title: "Get Staging Site Section Logs",
-    description: "Get logs for a staging site section since the last publish",
+    description: "Get logs for a staging site section since the last publish. Note: the sectionId parameter requires the section's Common ID (CID), not the regular section ID.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1637,7 +1754,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== WORKING SITE PAGE MANAGEMENT TOOLS ==========
@@ -1647,7 +1764,7 @@ server.registerTool(
   "create_staging_site_page",
   {
     title: "Create Staging Site Page",
-    description: "Create a new page in a staging site",
+    description: "Create a new page in a staging site. The identifier is used as the page's URL slug and must be unique within the staging site. The content field accepts page-level metadata as a JSON object (e.g. tags, extended properties).",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1683,7 +1800,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Revert Staging Site
@@ -1691,7 +1808,7 @@ server.registerTool(
   "revert_staging_site_page",
   {
     title: "Revert Staging Site",
-    description: "Revert a staging site to a previous state",
+    description: "Revert a staging site page to its last published state. This discards all unpublished changes to the page.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1726,7 +1843,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Page
@@ -1734,7 +1851,7 @@ server.registerTool(
   "get_staging_site_page",
   {
     title: "Get Staging Site Page",
-    description: "Get details of a staging site page. Use the previewUrl from the get_staging_site response to view the page changes in real time.",
+    description: "Get details of a staging site page. Set includeSections to true to retrieve the page's sections list (IDs, types, and order — not full content). To get full section content, call get_staging_site_section for each section. The response includes a previewUrl to view the page in a browser. Each section in the list includes audience metadata (IDs, locale, segment — without content) that can be used with get_staging_site_section_audience to retrieve full audience content.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1770,7 +1887,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Staging Site Page
@@ -1819,7 +1936,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Staging Site Page
@@ -1860,7 +1977,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Staging Site Page Logs
@@ -1868,7 +1985,7 @@ server.registerTool(
   "get_staging_site_page_logs",
   {
     title: "Get Staging Site Page Logs",
-    description: "Get the change logs for a staging site page since the last publish",
+    description: "Get the change logs for a staging site page since the last publish. Note: the pageId parameter requires the page's Common ID (CID), not the regular page ID.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1901,7 +2018,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== ContentSite ANALYTICS & ADMIN TOOLS ==========
@@ -1941,7 +2058,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get ContentSite Hits (Analytics)
@@ -1980,7 +2097,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get ContentSite Users
@@ -2019,7 +2136,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Content site Claims
@@ -2058,7 +2175,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== STAGING SITE AUDIENCE MANAGEMENT TOOLS ==========
@@ -2068,7 +2185,7 @@ server.registerTool(
   "create_staging_site_audience",
   {
     title: "Create Staging Site Audience",
-    description: "Create a new audience for a staging site. Audiences allow you to target content to specific locale and segment combinations.",
+    description: "Create a new audience for a staging site. Audiences allow you to target content to specific locale and segment combinations. The localeId and segmentId must reference locales and segments that are already configured on the staging site. Use get_staging_site_settings to retrieve the available locales and segments before creating audiences.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2110,7 +2227,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Site Audience
@@ -2118,7 +2235,7 @@ server.registerTool(
   "get_staging_site_audience",
   {
     title: "Get Staging Site Audience",
-    description: "Get details of a specific staging site audience by ID",
+    description: "Get details of a specific staging site audience by ID, including full audience content. To find available audience IDs, check the audiences metadata list returned by get_staging_site.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2151,7 +2268,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Site Audience
@@ -2159,7 +2276,7 @@ server.registerTool(
   "update_staging_site_audience",
   {
     title: "Update Staging Site Audience",
-    description: "Update an existing staging site audience",
+    description: "Update an existing staging site audience. The audience's locale and segment must reference locales and segments that are already configured on the staging site. Use get_staging_site_settings to retrieve the available locales and segments.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2196,7 +2313,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Site Audience
@@ -2237,7 +2354,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== STAGING SITE SECTION AUDIENCE MANAGEMENT TOOLS ==========
@@ -2247,7 +2364,7 @@ server.registerTool(
   "create_staging_site_section_audience",
   {
     title: "Create Staging Site Section Audience",
-    description: "Create a new audience override for a specific section. This allows you to customize section content for a specific locale/segment combination.",
+    description: "Create a new audience override for a specific section. This allows you to customize section content for a specific locale/segment combination. The localeId and segmentId must reference locales and segments that are already configured on the staging site. Use get_staging_site_settings to retrieve the available locales and segments before creating section audiences.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2291,7 +2408,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Get Section Audience
@@ -2299,7 +2416,7 @@ server.registerTool(
   "get_staging_site_section_audience",
   {
     title: "Get Staging Site Section Audience",
-    description: "Get details of a specific section audience by ID",
+    description: "Get details of a specific section audience by ID, including full audience content. To find available audience IDs, check the audiences metadata list returned by get_staging_site_section.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2334,7 +2451,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Update Section Audience
@@ -2342,7 +2459,7 @@ server.registerTool(
   "update_staging_site_section_audience",
   {
     title: "Update Staging Site Section Audience",
-    description: "Update an existing section audience override",
+    description: "Update an existing section audience override. The audience's locale and segment must reference locales and segments that are already configured on the staging site. Use get_staging_site_settings to retrieve the available locales and segments.",
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
@@ -2383,7 +2500,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // Delete Section Audience
@@ -2426,7 +2543,7 @@ server.registerTool(
         isError: true,
       };
     }
-  }
+  },
 );
 
 // ========== RESOURCES ==========
@@ -2524,7 +2641,7 @@ server.registerResource(
         },
       ],
     };
-  }
+  },
 );
 
 // Register a resource for API health status
@@ -2580,7 +2697,7 @@ server.registerResource(
         ],
       };
     }
-  }
+  },
 );
 
 // Start the server
