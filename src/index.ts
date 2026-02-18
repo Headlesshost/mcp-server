@@ -2,25 +2,56 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import { getOAuthProtectedResourceMetadataUrl, mcpAuthMetadataRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { z } from "zod";
 import axios, { AxiosResponse } from "axios";
 import FormData from "form-data";
+import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 // Configuration
 const API_BASE_URL = "https://api.headlesshost.com";
-const API_KEY = process.env.HEADLESSHOST_API_KEY || "YOUR API KEY HERE";
+const LEGACY_API_KEY = process.env.HEADLESSHOST_API_KEY?.trim();
+const ALLOW_LEGACY_API_KEY_FALLBACK = (process.env.ALLOW_LEGACY_API_KEY_FALLBACK || "true").toLowerCase() !== "false";
+const MCP_AUTH_MODE = (process.env.MCP_AUTH_MODE || "none").toLowerCase(); // none | oauth | mixed
+const MCP_OIDC_ISSUER_URL = process.env.MCP_OIDC_ISSUER_URL?.trim() || process.env.TOOLS_OIDC_ISSUER_URL?.trim();
+const MCP_OIDC_AUDIENCE = process.env.MCP_OIDC_AUDIENCE?.trim() || process.env.TOOLS_OIDC_AUDIENCE?.trim();
+const MCP_OIDC_SCOPES = (process.env.MCP_OIDC_SCOPES || "kapiti.read kapiti.write kapiti.admin")
+  .split(" ")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const TOKEN_VERIFY_CACHE_TTL_MS = Number(process.env.MCP_TOKEN_VERIFY_CACHE_TTL_MS || "60000");
 
-// Create axios instance with default config
-// Note: Content-Type is NOT set here as a default so that FormData uploads
-// can use their own multipart/form-data content type with boundary.
-// Axios automatically sets Content-Type: application/json for object payloads.
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    ...(API_KEY && { Authorization: `Bearer ${API_KEY}` }),
-  },
-  timeout: 30000,
-});
+const tokenVerifyCache = new Map<string, { expiresAt: number; authInfo: { clientId: string; scopes: string[]; expiresAt?: number } }>();
+
+function getApiClient(ctx: any) {
+  const accessToken = resolveAccessToken(ctx);
+
+  // Content-Type is NOT set by default so FormData uploads can provide their own boundary.
+  // Axios will set Content-Type: application/json for plain object payloads.
+  return axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+    },
+    timeout: 30000,
+  });
+}
+
+function resolveAccessToken(ctx: any): string | undefined {
+  const authInfoToken = ctx?.authInfo?.token;
+  if (typeof authInfoToken === "string" && authInfoToken.length > 0) {
+    return authInfoToken;
+  }
+
+  if (ALLOW_LEGACY_API_KEY_FALLBACK && LEGACY_API_KEY) {
+    return LEGACY_API_KEY;
+  }
+
+  return undefined;
+}
 
 // Types for Headlesshost API responses
 interface ApiResponse {
@@ -62,6 +93,91 @@ async function logError(message: string): Promise<void> {
   }
 }
 
+function parseJwtClaims(token: string): Record<string, any> {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return {};
+    const payload = Buffer.from(parts[1], "base64url").toString("utf8");
+    return JSON.parse(payload);
+  } catch {
+    return {};
+  }
+}
+
+async function buildOAuthMetadata(): Promise<OAuthMetadata | null> {
+  if (!MCP_OIDC_ISSUER_URL) return null;
+
+  const issuer = MCP_OIDC_ISSUER_URL.replace(/\/+$/, "");
+  const response = await fetch(`${issuer}/.well-known/openid-configuration`);
+  if (!response.ok) {
+    throw new Error(`Unable to load OIDC metadata from issuer (${response.status})`);
+  }
+
+  const oidc = (await response.json()) as any;
+  if (!oidc.issuer || !oidc.authorization_endpoint || !oidc.token_endpoint) {
+    throw new Error("OIDC discovery document is missing required OAuth fields");
+  }
+
+  return {
+    issuer: String(oidc.issuer),
+    authorization_endpoint: String(oidc.authorization_endpoint),
+    token_endpoint: String(oidc.token_endpoint),
+    registration_endpoint: oidc.registration_endpoint ? String(oidc.registration_endpoint) : undefined,
+    scopes_supported: Array.isArray(oidc.scopes_supported) ? oidc.scopes_supported : MCP_OIDC_SCOPES,
+    response_types_supported: Array.isArray(oidc.response_types_supported) ? oidc.response_types_supported : ["code"],
+    response_modes_supported: Array.isArray(oidc.response_modes_supported) ? oidc.response_modes_supported : undefined,
+    grant_types_supported: Array.isArray(oidc.grant_types_supported) ? oidc.grant_types_supported : undefined,
+    token_endpoint_auth_methods_supported: Array.isArray(oidc.token_endpoint_auth_methods_supported) ? oidc.token_endpoint_auth_methods_supported : undefined,
+    token_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.token_endpoint_auth_signing_alg_values_supported)
+      ? oidc.token_endpoint_auth_signing_alg_values_supported
+      : undefined,
+    service_documentation: oidc.service_documentation ? String(oidc.service_documentation) : undefined,
+    revocation_endpoint: oidc.revocation_endpoint ? String(oidc.revocation_endpoint) : undefined,
+    revocation_endpoint_auth_methods_supported: Array.isArray(oidc.revocation_endpoint_auth_methods_supported)
+      ? oidc.revocation_endpoint_auth_methods_supported
+      : undefined,
+    revocation_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.revocation_endpoint_auth_signing_alg_values_supported)
+      ? oidc.revocation_endpoint_auth_signing_alg_values_supported
+      : undefined,
+    introspection_endpoint: oidc.introspection_endpoint ? String(oidc.introspection_endpoint) : undefined,
+    introspection_endpoint_auth_methods_supported: Array.isArray(oidc.introspection_endpoint_auth_methods_supported)
+      ? oidc.introspection_endpoint_auth_methods_supported
+      : undefined,
+    introspection_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.introspection_endpoint_auth_signing_alg_values_supported)
+      ? oidc.introspection_endpoint_auth_signing_alg_values_supported
+      : undefined,
+    code_challenge_methods_supported: Array.isArray(oidc.code_challenge_methods_supported) ? oidc.code_challenge_methods_supported : ["S256"],
+    client_id_metadata_document_supported: Boolean(oidc.client_id_metadata_document_supported),
+  };
+}
+
+async function verifyBearerToken(token: string) {
+  const now = Date.now();
+  const cached = tokenVerifyCache.get(token);
+  if (cached && cached.expiresAt > now) {
+    return cached.authInfo;
+  }
+
+  const claims = parseJwtClaims(token);
+  const scopes = typeof claims.scope === "string" ? claims.scope.split(" ").filter(Boolean) : [];
+  const clientId = String(claims.client_id || claims.azp || claims.sub || claims.email || "unknown");
+  const expiresAt = typeof claims.exp === "number" ? claims.exp : undefined;
+
+  const response = await axios.get(`${API_BASE_URL}/tools/ping`, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 15000,
+    validateStatus: () => true,
+  });
+
+  if (response.status !== 200) {
+    throw new Error(response.data?.message || `Token validation failed with status ${response.status}`);
+  }
+
+  const authInfo = { clientId, scopes, expiresAt };
+  tokenVerifyCache.set(token, { authInfo, expiresAt: now + TOKEN_VERIFY_CACHE_TTL_MS });
+  return authInfo;
+}
+
 // ========== GENERAL TOOLS ENDPOINTS ==========
 
 // Ping - Test authentication and connection
@@ -75,7 +191,7 @@ server.registerTool(
   },
   async (_args, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get("/tools/ping");
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get("/tools/ping");
 
       return {
         content: [
@@ -112,7 +228,7 @@ server.registerTool(
   },
   async (_args, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get("/tools/health");
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get("/tools/health");
 
       return {
         content: [
@@ -149,7 +265,7 @@ server.registerTool(
   },
   async (_args, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/system/refdata`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/system/refdata`);
 
       return {
         content: [
@@ -219,7 +335,7 @@ server.registerTool(
         // If claims is an empty array or invalid, don't include it in payload
       }
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/membership/users", payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post("/tools/membership/users", payload);
 
       return {
         content: [
@@ -258,7 +374,7 @@ server.registerTool(
   },
   async ({ id }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/membership/users/${id}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/membership/users/${id}`);
 
       return {
         content: [
@@ -316,7 +432,7 @@ server.registerTool(
         payload.claims = Array.isArray(claims) ? claims : [claims];
       }
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/membership/users/${id}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/membership/users/${id}`, payload);
 
       return {
         content: [
@@ -357,7 +473,7 @@ server.registerTool(
   async ({ id, reason }, ctx) => {
     try {
       const payload = { reason };
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/membership/users/${id}`, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/membership/users/${id}`, {
         data: payload,
       });
 
@@ -403,7 +519,7 @@ server.registerTool(
   async ({ email, password, firstName, lastName, accountName }, ctx) => {
     try {
       const payload = { email, password, firstName, lastName, accountName };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/membership/register", payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post("/tools/membership/register", payload);
 
       return {
         content: [
@@ -440,7 +556,7 @@ server.registerTool(
   },
   async (_args, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/membership/account`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/membership/account`);
       return {
         content: [
           {
@@ -481,7 +597,7 @@ server.registerTool(
       const payload: any = {};
       if (name) payload.name = name;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put("/tools/membership/account", payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put("/tools/membership/account", payload);
 
       return {
         content: [
@@ -524,7 +640,7 @@ server.registerTool(
   async ({ userId, image }, ctx) => {
     try {
       const payload = { image };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/users/${userId}/profile-image`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/files/users/${userId}/profile-image`, payload);
 
       return {
         content: [
@@ -577,7 +693,7 @@ server.registerTool(
         contentType: mimetype || "application/octet-stream",
       });
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/files`, formData, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/files`, formData, {
         headers: {
           ...formData.getHeaders(),
         },
@@ -637,7 +753,7 @@ server.registerTool(
         contentType: mimetype || "image/jpeg",
       });
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/images`, formData, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/images`, formData, {
         headers: {
           ...formData.getHeaders(),
         },
@@ -687,7 +803,7 @@ server.registerTool(
   async ({ name, sampleDataId }, ctx) => {
     try {
       const payload = { name, sampleDataId };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post("/tools/content-sites", payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post("/tools/content-sites", payload);
 
       return {
         content: [
@@ -724,7 +840,7 @@ server.registerTool(
   },
   async ({}, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites`);
 
       return {
         content: [
@@ -763,7 +879,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}`);
 
       return {
         content: [
@@ -826,7 +942,7 @@ server.registerTool(
       if (productionUrl) payload.productionUrl = productionUrl;
       if (repoUrl) payload.repoUrl = repoUrl;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}`, payload);
 
       return {
         content: [
@@ -867,7 +983,7 @@ server.registerTool(
   async ({ contentSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}`, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}`, {
         data: payload,
       });
 
@@ -925,7 +1041,7 @@ server.registerTool(
       if (stageUrl) payload.stageUrl = stageUrl;
       if (guideUrl) payload.guideUrl = guideUrl;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`, payload);
 
       return {
         content: [
@@ -967,7 +1083,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`, {
         data: payload,
       });
 
@@ -1014,7 +1130,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, comments, isApproved, publishAt, previewUrl }, ctx) => {
     try {
       const payload = { comments, isApproved, publishAt, previewUrl };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/publish`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/publish`, payload);
 
       return {
         content: [
@@ -1054,7 +1170,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}`);
 
       return {
         content: [
@@ -1085,7 +1201,7 @@ server.registerTool(
   "get_staging_site_settings",
   {
     title: "Get Staging Site Settings",
-    description: "Get staging site settings and metadata without content. Returns site configuration including locales, segments, and audience metadata. This is a lightweight alternative to get_staging_site that excludes section and page content. Use this when you only need to look up available locales and segments (e.g. before creating audiences).",
+    description: "Get staging site settings and metadata without content. Returns site configuration including locales, segments, and audience metadata. This is a lightweight alternative to get_staging_site that excludes section and page content. Use this when you only need to look up available locales and segments (e.g. before creating audiences). Also returns the current user's permissions (userPermissions) for the content site, which indicates which tools and operations the user is authorized to perform.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
       stagingSiteId: z.string().describe("Staging site ID"),
@@ -1094,7 +1210,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/settings`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/settings`);
 
       return {
         content: [
@@ -1137,7 +1253,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, baseLocale, locales }, ctx) => {
     try {
       const payload = { baseLocale, locales };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/locales`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/locales`, payload);
 
       return {
         content: [
@@ -1182,7 +1298,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, segments }, ctx) => {
     try {
       const payload = { segments };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/segments`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/segments`, payload);
 
       return {
         content: [
@@ -1222,7 +1338,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`);
 
       return {
         content: [
@@ -1262,7 +1378,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/configuration`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/configuration`);
 
       return {
         content: [
@@ -1302,7 +1418,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/logs`);
 
       return {
         content: [
@@ -1341,7 +1457,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/published-sites`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/published-sites`);
 
       return {
         content: [
@@ -1383,7 +1499,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, reason }, ctx) => {
     try {
       const payload = { reason };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/revert`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/revert`, payload);
 
       return {
         content: [
@@ -1425,7 +1541,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, newName }, ctx) => {
     try {
       const payload = { newName };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/clone`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/clone`, payload);
 
       return {
         content: [
@@ -1471,7 +1587,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, pageId, sectionType, content }, ctx) => {
     try {
       const payload = { sectionType, content };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections`, payload);
 
       return {
         content: [
@@ -1513,7 +1629,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
 
       return {
         content: [
@@ -1561,7 +1677,7 @@ server.registerTool(
       if (content) payload.content = content;
       if (order !== undefined) payload.order = order;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`, payload);
 
       return {
         content: [
@@ -1603,7 +1719,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}`);
 
       return {
         content: [
@@ -1647,7 +1763,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, pageId, sectionId, publishMessage }, ctx) => {
     try {
       const payload = { publishMessage };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/publish`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/publish`, payload);
 
       return {
         content: [
@@ -1689,7 +1805,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/revert`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/revert`);
 
       return {
         content: [
@@ -1731,7 +1847,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/logs`);
 
       return {
         content: [
@@ -1777,7 +1893,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, title, identifier, content }, ctx) => {
     try {
       const payload = { title, identifier, content };
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages`, payload);
 
       return {
         content: [
@@ -1820,7 +1936,7 @@ server.registerTool(
   async ({ contentSiteId, stagingSiteId, reason, pageId }, ctx) => {
     try {
       const payload = { reason };
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/revert`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/revert`, payload);
 
       return {
         content: [
@@ -1862,7 +1978,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, includeSections }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, {
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, {
         params: { ...(includeSections && { includeSections: "true" }) },
       });
 
@@ -1913,7 +2029,7 @@ server.registerTool(
       if (identifier) payload.identifier = identifier;
       if (order !== undefined) payload.order = order;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`, payload);
 
       return {
         content: [
@@ -1954,7 +2070,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}`);
 
       return {
         content: [
@@ -1995,7 +2111,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/logs`);
 
       return {
         content: [
@@ -2036,7 +2152,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/logs`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/logs`);
       return {
         content: [
           {
@@ -2074,7 +2190,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/hits`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/hits`);
 
       return {
         content: [
@@ -2113,7 +2229,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/accounts`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/accounts`);
 
       return {
         content: [
@@ -2152,7 +2268,7 @@ server.registerTool(
   },
   async ({ contentSiteId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/claims`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/claims`);
 
       return {
         content: [
@@ -2204,7 +2320,7 @@ server.registerTool(
       if (content) payload.content = content;
       if (type) payload.type = type;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences`, payload);
 
       return {
         content: [
@@ -2245,7 +2361,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, audienceId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
 
       return {
         content: [
@@ -2290,7 +2406,7 @@ server.registerTool(
       const payload: any = {};
       if (content) payload.content = content;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`, payload);
 
       return {
         content: [
@@ -2331,7 +2447,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, audienceId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/audiences/${audienceId}`);
 
       return {
         content: [
@@ -2385,7 +2501,7 @@ server.registerTool(
       if (content) payload.content = content;
       if (excluded !== undefined) payload.excluded = excluded;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences`, payload);
 
       return {
         content: [
@@ -2428,7 +2544,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId, audienceId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).get(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
 
       return {
         content: [
@@ -2477,7 +2593,7 @@ server.registerTool(
       if (content) payload.content = content;
       if (excluded !== undefined) payload.excluded = excluded;
 
-      const response: AxiosResponse<ApiResponse> = await apiClient.put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`, payload);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).put(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`, payload);
 
       return {
         content: [
@@ -2520,7 +2636,7 @@ server.registerTool(
   },
   async ({ contentSiteId, stagingSiteId, pageId, sectionId, audienceId }, ctx) => {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
+      const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).delete(`/tools/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/pages/${pageId}/sections/${sectionId}/audiences/${audienceId}`);
 
       return {
         content: [
@@ -2557,10 +2673,12 @@ server.registerResource(
     description: "Current Headlesshost API configuration and available endpoints",
     mimeType: "application/json",
   },
-  async () => {
+  async (_uri, ctx) => {
     const config = {
       baseUrl: API_BASE_URL,
-      hasApiKey: !!API_KEY,
+      allowsLegacyApiKeyFallback: ALLOW_LEGACY_API_KEY_FALLBACK,
+      hasLegacyApiKey: !!LEGACY_API_KEY,
+      hasRequestAccessToken: !!ctx?.authInfo?.token,
       endpoints: {
         general: {
           ping: "GET /tools/ping - Test authentication and connection",
@@ -2653,10 +2771,10 @@ server.registerResource(
     description: "Current health status and connectivity information for the Headlesshost API",
     mimeType: "application/json",
   },
-  async () => {
+  async (_uri, ctx) => {
     try {
       const startTime = Date.now();
-      const response = await apiClient.get("/tools/ping");
+      const response = await getApiClient(ctx).get("/tools/ping");
       const endTime = Date.now();
       const responseTime = endTime - startTime;
 
@@ -2701,14 +2819,161 @@ server.registerResource(
 );
 
 // Start the server
-async function main() {
+async function startStdioMode() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   // Log to stderr so it doesn't interfere with the JSON-RPC protocol on stdout
   console.error("Headlesshost MCP Server started successfully");
+  console.error("Transport: stdio");
   console.error(`API Base URL: ${API_BASE_URL}`);
-  console.error(`API Key configured: ${!!API_KEY}`);
+  console.error(`Legacy API key fallback enabled: ${ALLOW_LEGACY_API_KEY_FALLBACK}`);
+  console.error(`Legacy API key configured: ${!!LEGACY_API_KEY}`);
+}
+
+async function startHttpMode() {
+  const port = Number(process.env.MCP_PORT || "3001");
+  const host = process.env.MCP_HOST || "127.0.0.1";
+  const publicBaseUrl = process.env.MCP_PUBLIC_BASE_URL || `http://${host}:${port}/mcp`;
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
+  const app = createMcpExpressApp({ host });
+
+  const resourceServerUrl = new URL(publicBaseUrl);
+  if (MCP_AUTH_MODE !== "none") {
+    if (!MCP_OIDC_ISSUER_URL) {
+      throw new Error("MCP_AUTH_MODE is oauth/mixed but MCP_OIDC_ISSUER_URL is not configured");
+    }
+    const oauthMetadata = await buildOAuthMetadata();
+    if (!oauthMetadata) {
+      throw new Error("Unable to resolve OAuth metadata");
+    }
+    app.use(
+      mcpAuthMetadataRouter({
+        oauthMetadata,
+        resourceServerUrl,
+        scopesSupported: MCP_OIDC_SCOPES,
+        resourceName: "Headlesshost MCP",
+      }),
+    );
+
+    // Compatibility endpoints some clients probe directly.
+    app.get("/.well-known/openid-configuration", (_req: any, res: any) => res.json(oauthMetadata));
+    app.get("/.well-known/oauth-authorization-server", (_req: any, res: any) => res.json(oauthMetadata));
+    app.get("/mcp/.well-known/openid-configuration", (_req: any, res: any) => res.json(oauthMetadata));
+    app.get("/mcp/.well-known/oauth-authorization-server", (_req: any, res: any) => res.json(oauthMetadata));
+    app.get("/.well-known/openid-configuration/mcp", (_req: any, res: any) => res.json(oauthMetadata));
+    app.get("/.well-known/oauth-authorization-server/mcp", (_req: any, res: any) => res.json(oauthMetadata));
+  }
+
+  const mcpHandler = async (req: any, res: any) => {
+    try {
+      if ((req.method || "GET").toUpperCase() === "POST") {
+        await transport.handleRequest(req, res, (req as any).body);
+        return;
+      }
+      await transport.handleRequest(req, res);
+    } catch (error) {
+      console.error("HTTP transport error:", error);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    }
+  };
+
+  const authMiddleware =
+    MCP_AUTH_MODE === "oauth"
+      ? requireBearerAuth({
+          verifier: {
+            verifyAccessToken: async (token) => {
+              const info = await verifyBearerToken(token);
+              return {
+                token,
+                clientId: info.clientId,
+                scopes: info.scopes,
+                expiresAt: info.expiresAt,
+                extra: { audience: MCP_OIDC_AUDIENCE },
+              };
+            },
+          },
+          requiredScopes: [],
+          resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl),
+        })
+      : null;
+
+  const mixedAuthMiddleware = async (req: any, res: any, next: any) => {
+    const authHeader = req.headers?.authorization;
+    if (!authHeader || typeof authHeader !== "string") {
+      next();
+      return;
+    }
+
+    try {
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const info = await verifyBearerToken(token);
+      req.auth = {
+        token,
+        clientId: info.clientId,
+        scopes: info.scopes,
+        expiresAt: info.expiresAt,
+      };
+      next();
+    } catch {
+      res.status(401).json({
+        error: "invalid_token",
+        error_description: "Bearer token is invalid",
+      });
+    }
+  };
+
+  if (authMiddleware) {
+    app.post("/mcp", authMiddleware, mcpHandler as any);
+    app.get("/mcp", authMiddleware, mcpHandler as any);
+    app.delete("/mcp", authMiddleware, mcpHandler as any);
+  } else if (MCP_AUTH_MODE === "mixed") {
+    app.post("/mcp", mixedAuthMiddleware, mcpHandler as any);
+    app.get("/mcp", mixedAuthMiddleware, mcpHandler as any);
+    app.delete("/mcp", mixedAuthMiddleware, mcpHandler as any);
+  } else {
+    app.post("/mcp", mcpHandler as any);
+    app.get("/mcp", mcpHandler as any);
+    app.delete("/mcp", mcpHandler as any);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const httpServer = app.listen(port, host, (error?: Error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+    httpServer.on("error", reject);
+  });
+
+  console.error("Headlesshost MCP Server started successfully");
+  console.error("Transport: streamable-http");
+  console.error(`MCP endpoint: ${publicBaseUrl}`);
+  console.error(`MCP auth mode: ${MCP_AUTH_MODE}`);
+  console.error(`MCP OIDC issuer configured: ${!!MCP_OIDC_ISSUER_URL}`);
+  console.error(`MCP OIDC audience configured: ${!!MCP_OIDC_AUDIENCE}`);
+  console.error(`API Base URL: ${API_BASE_URL}`);
+  console.error(`Legacy API key fallback enabled: ${ALLOW_LEGACY_API_KEY_FALLBACK}`);
+  console.error(`Legacy API key configured: ${!!LEGACY_API_KEY}`);
+}
+
+async function main() {
+  const transportMode = (process.env.MCP_TRANSPORT || "stdio").toLowerCase();
+  if (transportMode === "http") {
+    await startHttpMode();
+    return;
+  }
+
+  await startStdioMode();
 }
 
 main().catch((error) => {

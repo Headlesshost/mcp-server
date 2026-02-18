@@ -24,9 +24,71 @@ https://www.youtube.com/watch?v=xGGwcrI7gSo&feature=youtu.be
 
 ## Configuration
 
-The server requires a Headlesshost API key set via the `HEADLESSHOST_API_KEY` environment variable.
+Authentication options:
+
+- Preferred: per-request OAuth bearer token from the MCP client (`ctx.authInfo.token`)
+- Optional migration fallback: `HEADLESSHOST_API_KEY`
+
+Set `ALLOW_LEGACY_API_KEY_FALLBACK=false` to require OAuth tokens and disable legacy fallback.
+
+HTTP auth modes (set `MCP_AUTH_MODE`):
+
+- `none`: no auth at MCP edge
+- `oauth`: bearer token required for MCP calls (recommended for ChatGPT)
+- `mixed`: accepts calls with or without bearer token
+
+OAuth metadata env vars:
+
+- `MCP_OIDC_ISSUER_URL`: your IdP issuer URL (or reuse `TOOLS_OIDC_ISSUER_URL`)
+- `MCP_OIDC_AUDIENCE`: expected audience (optional metadata hint)
+- `MCP_PUBLIC_BASE_URL`: public MCP URL (for metadata), e.g. `https://<ngrok>.ngrok-free.app/mcp`
 
 ## Usage
+
+### Local HTTP testing (Streamable HTTP)
+
+Run the server over HTTP on localhost:
+
+```bash
+MCP_TRANSPORT=http MCP_PORT=3001 npm run dev
+```
+
+MCP endpoint:
+
+```text
+http://localhost:3001/mcp
+```
+
+Notes:
+
+- This mode is intended for local testing.
+- The current implementation runs stateless Streamable HTTP mode.
+
+### ChatGPT OAuth testing (per-user sessions)
+
+1. Start local MCP in OAuth mode:
+
+```bash
+MCP_TRANSPORT=http \
+MCP_PORT=3001 \
+MCP_AUTH_MODE=oauth \
+MCP_OIDC_ISSUER_URL="https://your-issuer.example.com" \
+MCP_OIDC_AUDIENCE="your-api-audience" \
+MCP_PUBLIC_BASE_URL="https://your-ngrok-subdomain.ngrok-free.app/mcp" \
+ALLOW_LEGACY_API_KEY_FALLBACK=false \
+npm run dev
+```
+
+2. Start ngrok:
+
+```bash
+ngrok http 3001
+```
+
+3. In ChatGPT app setup:
+
+- MCP Server URL: `https://your-ngrok-subdomain.ngrok-free.app/mcp`
+- Authentication: `OAuth`
 
 ### With Claude Desktop
 
@@ -44,10 +106,7 @@ Windows: %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "headlesshost-cms": {
       "command": "node",
-      "args": ["/path/to/kapiti.mcp/build/index.js"],
-      "env": {
-        "HEADLESSHOST_API_KEY": "your-auth-token"
-      }
+      "args": ["/path/to/kapiti.mcp/build/index.js"]
     }
   }
 }
@@ -60,10 +119,7 @@ Windows: %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "headlesshost-cms": {
       "command": "npx",
-      "args": ["headlesshost-mcp-server@latest"],
-      "env": {
-        "HEADLESSHOST_API_KEY": "your-auth-token"
-      }
+      "args": ["headlesshost-mcp-server@latest"]
     }
   }
 }
@@ -80,7 +136,8 @@ Add to your `.claude/settings.json`:
       "command": "node",
       "args": ["/path/to/kapiti.mcp/build/index.js"],
       "env": {
-        "HEADLESSHOST_API_KEY": "your-auth-token"
+        "HEADLESSHOST_API_KEY": "legacy-fallback-token-optional",
+        "ALLOW_LEGACY_API_KEY_FALLBACK": "true"
       }
     }
   }
@@ -95,7 +152,8 @@ Configure your client to use:
 
 - **Command**: `node`
 - **Args**: `["/path/to/kapiti.mcp/build/index.js"]`
-- **Environment**: Set `HEADLESSHOST_API_KEY`
+- **Auth (preferred)**: OAuth bearer token provided by the MCP client
+- **Optional env fallback**: `HEADLESSHOST_API_KEY` (disable with `ALLOW_LEGACY_API_KEY_FALLBACK=false`)
 
 ## Tools (53)
 
@@ -253,7 +311,8 @@ The server includes structured error handling:
 
 ## Security
 
-- API key authentication required for all operations
+- OAuth bearer token forwarding for per-user authentication
+- Optional legacy API key fallback for migration (`HEADLESSHOST_API_KEY`)
 - Secure environment variable handling
 - Input validation via Zod schemas on all tool inputs
 - Tool annotations signal destructive operations to clients
