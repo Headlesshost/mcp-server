@@ -119,7 +119,11 @@ Windows: %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "headlesshost-cms": {
       "command": "npx",
-      "args": ["headlesshost-mcp-server@latest"]
+      "args": ["headlesshost-mcp-server@latest"],
+      "env": {
+        "HEADLESSHOST_API_KEY": "legacy-fallback-token-optional",
+        "ALLOW_LEGACY_API_KEY_FALLBACK": "true"
+      }
     }
   }
 }

@@ -128,24 +128,14 @@ async function buildOAuthMetadata(): Promise<OAuthMetadata | null> {
     response_modes_supported: Array.isArray(oidc.response_modes_supported) ? oidc.response_modes_supported : undefined,
     grant_types_supported: Array.isArray(oidc.grant_types_supported) ? oidc.grant_types_supported : undefined,
     token_endpoint_auth_methods_supported: Array.isArray(oidc.token_endpoint_auth_methods_supported) ? oidc.token_endpoint_auth_methods_supported : undefined,
-    token_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.token_endpoint_auth_signing_alg_values_supported)
-      ? oidc.token_endpoint_auth_signing_alg_values_supported
-      : undefined,
+    token_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.token_endpoint_auth_signing_alg_values_supported) ? oidc.token_endpoint_auth_signing_alg_values_supported : undefined,
     service_documentation: oidc.service_documentation ? String(oidc.service_documentation) : undefined,
     revocation_endpoint: oidc.revocation_endpoint ? String(oidc.revocation_endpoint) : undefined,
-    revocation_endpoint_auth_methods_supported: Array.isArray(oidc.revocation_endpoint_auth_methods_supported)
-      ? oidc.revocation_endpoint_auth_methods_supported
-      : undefined,
-    revocation_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.revocation_endpoint_auth_signing_alg_values_supported)
-      ? oidc.revocation_endpoint_auth_signing_alg_values_supported
-      : undefined,
+    revocation_endpoint_auth_methods_supported: Array.isArray(oidc.revocation_endpoint_auth_methods_supported) ? oidc.revocation_endpoint_auth_methods_supported : undefined,
+    revocation_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.revocation_endpoint_auth_signing_alg_values_supported) ? oidc.revocation_endpoint_auth_signing_alg_values_supported : undefined,
     introspection_endpoint: oidc.introspection_endpoint ? String(oidc.introspection_endpoint) : undefined,
-    introspection_endpoint_auth_methods_supported: Array.isArray(oidc.introspection_endpoint_auth_methods_supported)
-      ? oidc.introspection_endpoint_auth_methods_supported
-      : undefined,
-    introspection_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.introspection_endpoint_auth_signing_alg_values_supported)
-      ? oidc.introspection_endpoint_auth_signing_alg_values_supported
-      : undefined,
+    introspection_endpoint_auth_methods_supported: Array.isArray(oidc.introspection_endpoint_auth_methods_supported) ? oidc.introspection_endpoint_auth_methods_supported : undefined,
+    introspection_endpoint_auth_signing_alg_values_supported: Array.isArray(oidc.introspection_endpoint_auth_signing_alg_values_supported) ? oidc.introspection_endpoint_auth_signing_alg_values_supported : undefined,
     code_challenge_methods_supported: Array.isArray(oidc.code_challenge_methods_supported) ? oidc.code_challenge_methods_supported : ["S256"],
     client_id_metadata_document_supported: Boolean(oidc.client_id_metadata_document_supported),
   };
@@ -1293,10 +1283,14 @@ server.registerTool(
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
-      segments: z.array(z.object({
-        code: z.string().describe("Segment code (max 6 characters, e.g. 'YOUTH')"),
-        description: z.string().describe("Segment description (e.g. 'Youth demographic aged 18-25')"),
-      })).describe("Array of segments to configure. Any existing segments not in this list will be removed."),
+      segments: z
+        .array(
+          z.object({
+            code: z.string().describe("Segment code (max 6 characters, e.g. 'YOUTH')"),
+            description: z.string().describe("Segment description (e.g. 'Youth demographic aged 18-25')"),
+          }),
+        )
+        .describe("Array of segments to configure. Any existing segments not in this list will be removed."),
     },
     annotations: { destructiveHint: false },
   },
@@ -2187,7 +2181,7 @@ server.registerTool(
   "get_content_site_hits",
   {
     title: "Get ContentSite Hits",
-    description: "Get daily hits for a content site",
+    description: "Get daily hits for a content site for the last 30 days.",
     inputSchema: {
       contentSiteId: z.string().describe("Content site ID"),
     },
