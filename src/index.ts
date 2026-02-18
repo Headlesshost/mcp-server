@@ -174,7 +174,12 @@ async function verifyBearerToken(token: string) {
   }
 
   const authInfo = { clientId, scopes, expiresAt };
-  tokenVerifyCache.set(token, { authInfo, expiresAt: now + TOKEN_VERIFY_CACHE_TTL_MS });
+
+  // Cache until the earlier of: our TTL, or the token's own exp claim
+  const jwtExpiresAtMs = typeof expiresAt === "number" ? expiresAt * 1000 : Infinity;
+  const cacheExpiresAt = Math.min(now + TOKEN_VERIFY_CACHE_TTL_MS, jwtExpiresAtMs);
+  tokenVerifyCache.set(token, { authInfo, expiresAt: cacheExpiresAt });
+
   return authInfo;
 }
 
@@ -2840,6 +2845,15 @@ async function startHttpMode() {
   });
   await server.connect(transport);
   const app = createMcpExpressApp({ host });
+
+  // Health endpoint — no auth required, used by load balancers and container orchestrators
+  app.get("/_health", (_req: any, res: any) => {
+    res.status(200).json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      version: "1.3.1",
+    });
+  });
 
   const resourceServerUrl = new URL(publicBaseUrl);
   if (MCP_AUTH_MODE !== "none") {

@@ -1,6 +1,6 @@
 {
   "name": "headlesshost-mcp-server",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "MCP server for Headlesshost API tools endpoints",
   "type": "module",
   "main": "build/index.js",
@@ -28,6 +28,7 @@
     "@types/dotenv": "^6.1.1",
     "axios": "^1.6.0",
     "dotenv": "^17.2.1",
+    "express": "^5.2.1",
     "form-data": "^4.0.4",
     "zod": "^3.22.0"
   },
