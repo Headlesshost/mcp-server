@@ -1,6 +1,6 @@
 {
   "name": "headlesshost-mcp-server",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "MCP server for Headlesshost API tools endpoints",
   "type": "module",
   "main": "build/index.js",

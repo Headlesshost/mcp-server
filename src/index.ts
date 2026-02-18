@@ -9,6 +9,8 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import { z } from "zod";
 import axios, { AxiosResponse } from "axios";
 import FormData from "form-data";
+import * as fs from "fs";
+import * as path from "path";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 // Configuration
@@ -666,26 +668,81 @@ server.registerTool(
   "upload_staging_site_file",
   {
     title: "Upload Staging Site File",
-    description: "Upload a file to a staging site",
+    description: `Upload a file to a staging site.
+
+IMPORTANT - How to provide the file (choose one):
+
+1. filePath (recommended for local files): Provide the absolute path to the file on disk.
+   This is the most reliable method and should always be used when the file exists locally.
+   Example: filePath = "/Users/jane/Documents/brochure.pdf"
+
+2. file (base64 fallback): Provide the file as a base64-encoded string, optionally as a data URI
+   (e.g. "data:application/pdf;base64,..."). Only use this for very small files. AI models cannot
+   reliably relay large files as base64 — the data is typically truncated mid-stream, producing a
+   corrupt file that appears to upload successfully but is unusable. If the file is larger than
+   ~10KB, use filePath instead.
+
+The mime type is auto-detected from the file extension (filePath) or data URI prefix (file).
+If using raw base64 without a data URI prefix, provide the mimetype explicitly.`,
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
-      file: z.string().describe("Base64 encoded file data"),
-      filename: z.string().optional().describe("Original filename"),
-      mimetype: z.string().optional().describe("File MIME type"),
+      filePath: z.string().optional().describe("Absolute path to the file on disk. Use this for local files — it is more reliable than passing base64."),
+      file: z.string().optional().describe("Base64 encoded file data or a data URI (data:application/pdf;base64,...). Only reliable for very small files under ~10KB."),
+      filename: z.string().optional().describe("Override filename. Defaults to the basename of filePath, or 'uploaded-file.<ext>' for base64 uploads."),
+      mimetype: z.string().optional().describe("Override MIME type. Auto-detected from file extension or data URI prefix when not provided."),
     },
     annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }, ctx) => {
+  async ({ contentSiteId, stagingSiteId, filePath, file, filename, mimetype }, ctx) => {
     try {
-      // Strip data URI prefix if present (e.g. "data:application/pdf;base64,...")
-      const base64Data = file.includes(",") ? file.split(",")[1] : file;
-      const buffer = Buffer.from(base64Data, "base64");
+      let buffer: Buffer;
+      let resolvedMimeType: string;
+      let resolvedFilename: string;
+
+      if (filePath) {
+        // Read directly from disk — reliable for any file size
+        buffer = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).replace(".", "").toLowerCase();
+        const extToMime: Record<string, string> = {
+          "pdf": "application/pdf",
+          "doc": "application/msword",
+          "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "xls": "application/vnd.ms-excel",
+          "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "txt": "text/plain",
+          "csv": "text/csv",
+          "json": "application/json",
+          "zip": "application/zip",
+        };
+        resolvedMimeType = mimetype || extToMime[ext] || "application/octet-stream";
+        resolvedFilename = filename || path.basename(filePath);
+      } else if (file) {
+        // Base64 path — only reliable for very small files
+        let detectedMimeType = mimetype;
+        let base64Data = file;
+        if (file.includes(",")) {
+          const [header, data] = file.split(",");
+          base64Data = data;
+          if (!detectedMimeType) {
+            const match = header.match(/^data:([^;]+)/);
+            if (match) detectedMimeType = match[1];
+          }
+        }
+        resolvedMimeType = detectedMimeType || "application/octet-stream";
+        buffer = Buffer.from(base64Data, "base64");
+        resolvedFilename = filename || "uploaded-file";
+      } else {
+        return {
+          content: [{ type: "text", text: "Error: provide either filePath (absolute path on disk) or file (base64 data)." }],
+          isError: true,
+        };
+      }
 
       const formData = new FormData();
       formData.append("file", buffer, {
-        filename: filename || "uploaded-file.txt",
-        contentType: mimetype || "application/octet-stream",
+        filename: resolvedFilename,
+        contentType: resolvedMimeType,
       });
 
       const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/files`, formData, {
@@ -726,26 +783,89 @@ server.registerTool(
   "upload_staging_site_image",
   {
     title: "Upload Staging Site Image",
-    description: "Upload an image to a staging site",
+    description: `Upload an image to a staging site.
+
+IMPORTANT - How to provide the image (choose one):
+
+1. filePath (recommended for local files): Provide the absolute path to the image file on disk.
+   This is the most reliable method and should always be used when the file exists locally.
+   Example: filePath = "/Users/jane/Pictures/hero.png"
+
+2. file (base64 fallback): Provide the image as a base64-encoded string, optionally as a data URI
+   (e.g. "data:image/png;base64,..."). Only use this for small images. AI models cannot reliably
+   relay large images as base64 — the data is typically truncated mid-stream, producing a corrupt
+   file that appears to upload successfully but cannot be displayed. If the image is larger than
+   ~10KB, use filePath instead.
+
+The mime type is auto-detected from the file extension (filePath) or data URI prefix (file).
+If using raw base64 without a data URI prefix, provide the mimetype explicitly.`,
     inputSchema: {
       contentSiteId: z.string().describe("Content Site ID"),
       stagingSiteId: z.string().describe("Staging Site ID"),
-      file: z.string().describe("Base64 encoded file data"),
-      filename: z.string().optional().describe("Original filename"),
-      mimetype: z.string().optional().describe("File MIME type"),
+      filePath: z.string().optional().describe("Absolute path to the image file on disk. Use this for local files — it is more reliable than passing base64."),
+      file: z.string().optional().describe("Base64 encoded file data or a data URI (data:image/png;base64,...). Only reliable for small images under ~10KB."),
+      filename: z.string().optional().describe("Override filename. Defaults to the basename of filePath, or 'uploaded-image.<ext>' for base64 uploads."),
+      mimetype: z.string().optional().describe("Override MIME type. Auto-detected from file extension or data URI prefix when not provided."),
     },
     annotations: { destructiveHint: false },
   },
-  async ({ contentSiteId, stagingSiteId, file, filename, mimetype }, ctx) => {
+  async ({ contentSiteId, stagingSiteId, filePath, file, filename, mimetype }, ctx) => {
     try {
-      // Strip data URI prefix if present (e.g. "data:image/png;base64,...")
-      const base64Data = file.includes(",") ? file.split(",")[1] : file;
-      const buffer = Buffer.from(base64Data, "base64");
+      const mimeToExt: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/gif": "gif",
+        "image/svg+xml": "svg",
+        "image/webp": "webp",
+        "image/x-icon": "ico",
+      };
+      const extToMime: Record<string, string> = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "svg": "image/svg+xml",
+        "webp": "image/webp",
+        "ico": "image/x-icon",
+      };
+
+      let buffer: Buffer;
+      let resolvedMimeType: string;
+      let resolvedFilename: string;
+
+      if (filePath) {
+        // Read directly from disk — reliable for any file size
+        buffer = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).replace(".", "").toLowerCase();
+        resolvedMimeType = mimetype || extToMime[ext] || "image/jpeg";
+        resolvedFilename = filename || path.basename(filePath);
+      } else if (file) {
+        // Base64 path — only reliable for small images
+        let detectedMimeType = mimetype;
+        let base64Data = file;
+        if (file.includes(",")) {
+          const [header, data] = file.split(",");
+          base64Data = data;
+          if (!detectedMimeType) {
+            const match = header.match(/^data:([^;]+)/);
+            if (match) detectedMimeType = match[1];
+          }
+        }
+        resolvedMimeType = detectedMimeType || "image/jpeg";
+        buffer = Buffer.from(base64Data, "base64");
+        const defaultExt = mimeToExt[resolvedMimeType] || "jpg";
+        resolvedFilename = filename || `uploaded-image.${defaultExt}`;
+      } else {
+        return {
+          content: [{ type: "text", text: "Error: provide either filePath (absolute path on disk) or file (base64 data)." }],
+          isError: true,
+        };
+      }
 
       const formData = new FormData();
       formData.append("file", buffer, {
-        filename: filename || "uploaded-image.jpg",
-        contentType: mimetype || "image/jpeg",
+        filename: resolvedFilename,
+        contentType: resolvedMimeType,
       });
 
       const response: AxiosResponse<ApiResponse> = await getApiClient(ctx).post(`/tools/files/content-sites/${contentSiteId}/staging-sites/${stagingSiteId}/images`, formData, {
