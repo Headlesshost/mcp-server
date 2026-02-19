@@ -14,7 +14,7 @@ import * as path from "path";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 // Configuration
-const API_BASE_URL = "https://api.headlesshost.com";
+const API_BASE_URL = process.env.HEADLESSHOST_API_BASE_URL?.trim() || "https://api.headlesshost.com";
 const LEGACY_API_KEY = process.env.HEADLESSHOST_API_KEY?.trim();
 const ALLOW_LEGACY_API_KEY_FALLBACK = (process.env.ALLOW_LEGACY_API_KEY_FALLBACK || "true").toLowerCase() !== "false";
 const MCP_AUTH_MODE = (process.env.MCP_AUTH_MODE || "none").toLowerCase(); // none | oauth | mixed
@@ -67,7 +67,7 @@ interface ApiResponse {
 const server = new McpServer(
   {
     name: "headlesshost-tools-server",
-    version: "1.3.1",
+    version: "1.4.1",
   },
   {
     capabilities: {
@@ -2965,7 +2965,7 @@ async function startHttpMode() {
     res.status(200).json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      version: "1.3.1",
+      version: "1.4.1",
     });
   });
 

@@ -1,0 +1,16 @@
+
+[Unit]
+Description=HeadlessHost MCP
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/var/www/kapiti.mcp/
+ExecStart=/home/ec2-user/.nvm/versions/node/v16.17.0/bin/node index
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=kapiti.mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

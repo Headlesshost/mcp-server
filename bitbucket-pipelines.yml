@@ -1,0 +1,88 @@
+image: node:20
+   
+definitions:
+    steps:
+        - step: &merge
+            name: Merge Master
+            script:
+                - git pull origin master
+                - git push origin
+        - step: &build
+              name: Build
+              caches:
+                  - node
+              script:
+                  - npm install
+                  - npm run build
+                  - cp -rv deploy-scripts dist 
+                  - cp appspec.yml dist/appspec.yml
+                  - cp package.json dist/package.json
+                  - cp package-lock.json dist/package-lock.json
+              artifacts:
+                  - dist/**
+        - step: &deploy
+                  script:
+                    - apt-get update
+                    - apt-get install zip
+                    - ls -l
+                    # Write env vars
+                    - cd dist
+                    - sed -i 's|MCP_OIDC_ISSUER_URL_VAR|'"$MCP_OIDC_ISSUER_URL_VAR"'|g' .env.template
+                    - mv .env.template .env
+                    - npm install --omit=optional
+                    - echo -e "User-agent:*" | cat >> robots.txt
+                    - echo -e "Disallow:/" | cat >> robots.txt
+                    - zip -r ../kapitimcp.zip .
+                    - cd ..
+                    - ls -l
+                    - pipe: atlassian/aws-code-deploy:1.1.1
+                      variables:
+                        AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                        AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                        AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                        COMMAND: "upload"
+                        APPLICATION_NAME: $APPLICATION_NAME
+                        ZIP_FILE: "kapitimcp.zip"
+                        S3_BUCKET: "codedeploy.kapiti.com"
+                        VERSION_LABEL: "kapiti-$BITBUCKET_BUILD_NUMBER.zip"
+                    - pipe: atlassian/aws-code-deploy:1.1.1
+                      variables:
+                        AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                        AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                        AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                        COMMAND: "deploy"
+                        APPLICATION_NAME: $APPLICATION_NAME
+                        DEPLOYMENT_GROUP: $DEPLOYMENT_GROUP
+                        IGNORE_APPLICATION_STOP_FAILURES: "true"
+                        FILE_EXISTS_BEHAVIOR: "OVERWRITE"
+                        WAIT: "true"
+                        S3_BUCKET: "codedeploy.kapiti.com"
+                        VERSION_LABEL: "kapiti-$BITBUCKET_BUILD_NUMBER.zip"     
+      
+        - step: &tag
+            name: Tag and Push to Master
+            artifacts: 
+              download: false
+              paths:
+                - build
+            script:
+              - git fetch --all --tags
+              - git checkout -b master
+              - git pull origin ${BITBUCKET_BRANCH} ${BITBUCKET_COMMIT}
+              - branchname=$(echo $BITBUCKET_BRANCH | grep -o '[0-9.]*$')
+              - semver=$(echo $branchname+$BITBUCKET_BUILD_NUMBER)
+              - echo $semver
+              - git tag $semver
+              - git push origin master --tags  
+pipelines:
+    branches:
+        release/peak:
+            - step: *merge
+            - step: *build
+            - step:
+                clone:
+                  enabled: false
+                <<: *deploy
+                name: Production
+                deployment: Production
+            - step: *tag

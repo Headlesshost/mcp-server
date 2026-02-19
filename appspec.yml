@@ -1,0 +1,20 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /var/www/kapiti.mcp
+  - source: deploy-scripts/mcp.service
+    destination: /etc/systemd/system
+hooks:
+  ApplicationStop:
+    - location: deploy-scripts/application_stop.sh
+      timeout: 20
+  BeforeInstall:
+    - location: deploy-scripts/before_install.sh
+      timeout: 20
+  AfterInstall:
+    - location: deploy-scripts/after_install.sh
+      timeout: 600
+  ApplicationStart:
+    - location: deploy-scripts/application_start.sh
+      timeout: 20
